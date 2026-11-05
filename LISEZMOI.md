@@ -18,8 +18,9 @@ Ensuite, chaque modification envoyée sur GitHub arrive toute seule sur le Pi en
 
 ## Adresse en ligne
 
-Cloudflare › Zero Trust › Networks › Tunnels › le tunnel du Pi › Public Hostname › Add :
-sous-domaine `releves`, domaine `fayetcardoso.fr`, service `HTTP`, URL `localhost:3010`.
+- DNS Cloudflare : `releves.fayetcardoso.fr` → tunnel « ecotole » (fait le 05/11/2026).
+- Le tunnel est réglé par le fichier de config de cloudflared sur le Pi : le script d'installation y ajoute
+  `releves.fayetcardoso.fr → http://localhost:3010` (copie de sauvegarde, vérification, retour arrière si problème).
 
 ## Régler les appareils
 

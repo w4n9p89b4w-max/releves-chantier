@@ -17,7 +17,9 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
 ## Mise en ligne
 - Pousser sur `main` suffit : le Pi récupère la nouvelle version en 5 minutes au plus.
 - Pi : `etiennefayetpi` (192.168.1.48 à la maison), Debian 13, Node 24 via nvm. Dossier `~/releves-chantier`, base `~/releves-chantier/releves.db` (à sauvegarder, jamais sur GitHub).
-- Cloudflare Tunnel (même tunnel que le budget) : nom d'hôte public `releves.fayetcardoso.fr` → HTTP `localhost:3010`.
+- Cloudflare Tunnel « ecotole » (id 95d63aa5-…, géré localement par le fichier config.yml de cloudflared sur le Pi, pas modifiable
+  depuis le tableau de bord). DNS `releves` CNAME → 95d63aa5-c0bd-4b84-8226-feba2832bd39.cfargotunnel.com créé le 05/11/2026 ;
+  la règle `releves.fayetcardoso.fr → http://localhost:3010` est ajoutée par `installer-pi.sh` avant la règle finale http_status:404.
   Conseillé : application Cloudflare Access sur cette adresse (données clients).
 - Commandes utiles sur le Pi : `sudo systemctl status releves-chantier`, `sudo journalctl -u releves-chantier -n 50`,
   `sudo systemctl start releves-chantier-maj` (forcer la mise à jour), `systemctl list-timers | grep releves`.
