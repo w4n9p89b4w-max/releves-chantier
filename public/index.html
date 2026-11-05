@@ -358,6 +358,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
     <div class="exp-list">
       <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
       <button type="button" data-exp="json"><b>Fichier JSON</b><span>Copie complète du dossier (avec photos et croquis), réimportable avec « Restaurer ».</span></button>
+      <button type="button" data-exp="calepinage"><b>Projet calepinage (.json)</b><span>Fiche chantier prête pour le calepinage : nom, prénom, adresse, ville / code postal, téléphone, mail, tôle et pliages. Dans le calepinage : « Ouvrir (.json) ».</span></button>
       <button type="button" data-exp="label"><b>Étiquette contact 62 × 60 mm</b><span>Nom, téléphone, adresse et date de visite, pour l’imprimante d’étiquettes.</span></button>
     </div>
     <div class="lb-preview" id="lbPreview"></div>
@@ -541,6 +542,7 @@ function normalize(c){
   const t = c.toiture || {};
   for(const k of ['existante','etat','charpente','isolation']) if(t[k] && !Array.isArray(t[k])) t[k] = [t[k]];
   if(t.ondulit === true && !t.produit) t.produit = ['Ondulit'];
+  if(Array.isArray(t.produit)) t.produit = t.produit.map(x => x==='Covrib' ? 'Coverib' : x);
   const p = c.portail || {};
   for(const k of ['type','sens','remplissage']) if(p[k] && !Array.isArray(p[k])) p[k] = [p[k]];
   return c;
@@ -1518,7 +1520,7 @@ function mesuresHTML(){
       ${field('toiture.etat','État',{checks:['Bon','Moyen','Rouillée','Fuyarde']})}
       ${field('toiture.charpente','Charpente',{checks:['Bois','Métal','Mixte','Non visible']})}
       ${field('toiture.isolation','Isolation',{checks:['Aucune','Laine de verre','Polystyrène','Isolant mince','Autre']})}
-      ${field('toiture.produit','Produit proposé',{checks:['Ondulit','Covrib']})}
+      ${field('toiture.produit','Produit proposé',{checks:['Ondulit','Coverib']})}
       ${field('toiture.couleur','Couleur',{checks:['Alu','Blanc','Gris']})}
     </div>`;
   if(c.types.includes('portail')) h += `
@@ -1637,8 +1639,35 @@ $('#exportDlg').onclick = async e => {
   const c = S.cur; $('#exportDlg').hidden = true;
   if(b.dataset.exp==='pdf'){ openReport(); printWith('pdf'); }
   if(b.dataset.exp==='json') download([c], S.media, `releve-${slug(fullName(c))}-${c.date||''}.json`);
+  if(b.dataset.exp==='calepinage') exportCalepinage(c);
   if(b.dataset.exp==='label'){ $('#labelSheet').innerHTML = labelHTML(c); printWith('label'); }
 };
+/* Projet pour le calepinage toiture (format « calepinage-toiture » v2, ouvert par « Ouvrir (.json) ») :
+   seule la fiche chantier est remplie, les pans se dessinent dans le calepinage. */
+function exportCalepinage(c){
+  const t = c.toiture || {};
+  const produit = (listVal(t.produit).split(', ')[0] || '');
+  const toleType = produit === 'Ondulit' ? 'Ondulit' : 'Coverib';
+  const couleur = listVal(t.couleur).toLowerCase();
+  const out = {
+    format:'calepinage-toiture', version:2, enregistre:new Date().toISOString(),
+    projet:{
+      settings:{largeur: toleType==='Ondulit' ? 0.785 : 0.773, debEgout:0, debFaitage:0, arrondi:'biais', lmax:'11', recouv:'', autoOrient:'x', mm:1,
+        plLen:'6', plRec:'0.2', biaisAdd:0.07, biaisStep:0.05, biaisMenu:1, toleType, visM2:6},
+      pans:[], drafts:[], live:[],
+      info:{nom:c.nom||'', prenom:c.prenom||'', entreprise:'', adresse:c.adresse||'',
+        ville:[c.ville, c.cp].filter(Boolean).join(' '), tel:c.tel||'', mail:c.email||'',
+        tole:[produit || toleType, couleur].filter(Boolean).join(' '), pli:couleur}
+    },
+    panSelectionne:0, vue:null, outil:'draw', fond:null
+  };
+  const base = [c.nom, c.prenom].filter(Boolean).join(' ').trim();
+  const name = 'calepinage' + (base ? '-' + base.replace(/[^\w\-àâäéèêëîïôöùûüç ]/gi,'').replace(/\s+/g,'-') : '-projet') + '.json';
+  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  toast(inFrame ? 'Le téléchargement marche dans l\u2019appli installée' : 'Projet calepinage enregistré');
+}
 function download(chantiers, media, name){
   const blob = new Blob([JSON.stringify({app:'releves-chantier', v:2, exported:new Date().toISOString(), chantiers, media})], {type:'application/json'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();

@@ -32,4 +32,4 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
   pavé numérique maison pour téléphone, code postal et mesures en mm.
 - Dessin : traits éditables, aimants (sommets, horizontal/vertical à 5°, même longueur), cotes posées en touchant un trait,
   zoom 2 doigts, plein écran qui agrandit la feuille aux proportions de l'écran.
-- Exports : PDF (impression A4), JSON (réimportable), étiquette contact 62 × 60 mm.
+- Exports : PDF (impression A4), JSON (réimportable), étiquette contact 62 × 60 mm, projet calepinage (.json au format « calepinage-toiture » v2 : fiche chantier remplie, pans vides ; ville = « ville code postal », tôle = produit + couleur ; ouvert par « Ouvrir (.json) » du calepinage G:\OneDrive\Bureau\teste calepinage\calepinage.html).
