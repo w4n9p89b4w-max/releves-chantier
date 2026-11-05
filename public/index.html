@@ -1,0 +1,1692 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Relevés">
+<meta name="theme-color" content="#1d5ca8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}</style>
+<title>Relevés Chantier</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout : liste des chantiers à gauche, une seule page par chantier à droite (client → dessin → photos & fichiers → remarques → mesures) */
+:root{
+  --bg:#e9edef; --surface:#ffffff; --surface-2:#f4f6f7; --ink:#1a2226; --muted:#5a6870; --line:#d0d8dc;
+  --accent:#1d5ca8; --accent-soft:#dfe9f5; --accent-ink:#ffffff; --tape:#f2b705; --tape-ink:#2a2200;
+  --danger:#b3261e; --ok:#2c7a4b; --warn:#a86a00;
+  --f-display:'Barlow Condensed','Arial Narrow','Helvetica Neue',sans-serif;
+  --f-body:'Barlow',-apple-system,'Segoe UI',system-ui,sans-serif;
+  --f-num:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10161a; --surface:#192126; --surface-2:#141b1f; --ink:#e4eaed; --muted:#93a2aa; --line:#2b363c;
+  --accent:#6ea6ea; --accent-soft:#1d2d40; --accent-ink:#0c1520; --tape:#f5c63a; --tape-ink:#231c00;
+  --danger:#ef7b72; --ok:#6cc893; --warn:#e6a945; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10161a; --surface:#192126; --surface-2:#141b1f; --ink:#e4eaed; --muted:#93a2aa; --line:#2b363c;
+  --accent:#6ea6ea; --accent-soft:#1d2d40; --accent-ink:#0c1520; --tape:#f5c63a; --tape-ink:#231c00;
+  --danger:#ef7b72; --ok:#6cc893; --warn:#e6a945; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--f-body);-webkit-tap-highlight-color:transparent;overflow:hidden}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;margin:0;text-wrap:balance}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+
+#app{display:grid;grid-template-columns:340px minmax(0,1fr);height:100%}
+.syncbox{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.syncdot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
+.syncdot.ok{background:var(--ok)} .syncdot.wait{background:var(--warn)} .syncdot.err{background:var(--danger)}
+.viewbanner{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:10px}
+body.viewer #newBtn, body.viewer .tb, body.viewer .sheetbar .btn, body.viewer .drop, body.viewer [data-del], body.viewer [data-annot],
+body.viewer #delChantier, body.viewer .quick, body.viewer [data-addpan], body.viewer [data-delpan], body.viewer #geoBtn,
+body.viewer .strip .add, body.viewer .ck:has(input:not(:checked)), body.viewer #restoreLbl, body.viewer #exportAll, body.viewer .typepick label:has(input:not(:checked)){display:none!important}
+body.viewer #cv{pointer-events:none}
+body.viewer .f input[readonly], body.viewer .f textarea[readonly], body.viewer .pans input[readonly]{background:transparent;border-color:transparent;padding-left:0}
+#settings{position:fixed;inset:0;z-index:58;background:rgba(10,15,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+#settings .box{background:var(--surface);border-radius:16px;width:min(520px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+#settings h3{font-size:26px}
+.roles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.roles label{border:2px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:4px;cursor:pointer}
+.roles label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.roles input{position:absolute;opacity:0}
+.roles b{font-size:16px}
+.roles span{font-size:13px;color:var(--muted)}
+.foot{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.pane{display:flex;flex-direction:column;min-height:0;flex:1}
+#clientPane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:20px;gap:12px}
+#clientPane .card{padding:16px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.two > *, .cp-ville > *{min-width:0}
+.f input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;text-align:left}
+.f input[type=date]::-webkit-date-and-time-value{text-align:left}
+.f input[data-pad]{cursor:pointer}
+.f input.padfocus{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 3px var(--accent-soft)}
+#numpad{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:56;width:min(340px,calc(100% - 24px));
+  background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.3);padding:14px;display:flex;flex-direction:column;gap:10px}
+#numpad .np-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+#numpad .np-lbl{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+#numpad .np-val{font:500 28px var(--f-num);min-height:44px;padding:4px 12px;border:2px solid var(--accent);border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:flex-end;gap:6px;overflow:hidden;white-space:nowrap}
+#numpad .np-val small{font-size:15px;color:var(--muted)}
+#numpad .pad button:disabled{visibility:hidden}
+#clientPane .contact .btn{flex:1 1 auto}
+#side{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);background:var(--surface-2);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:16px}
+#main{min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-left:max(16px,2.5vw);padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 60px}
+.page{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+
+.brand{display:flex;align-items:center;gap:10px;padding-block:18px 12px}
+.brand svg{flex:none}
+.brand h1{font-size:26px;line-height:1}
+.brand small{display:block;font:500 12px var(--f-body);color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.search{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);min-height:46px}
+.list{flex:1;overflow-y:auto;margin:12px -6px 0;padding:0 6px 12px;display:flex;flex-direction:column;gap:6px}
+.item{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:var(--r);padding:12px;min-height:64px}
+.item:hover{background:var(--surface)}
+.item[aria-current="true"]{background:var(--surface);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.item b{display:block;font-weight:600}
+.item .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:3px}
+.sidefoot{border-top:1px solid var(--line);padding-block:10px 14px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:8px}
+.sidefoot .row{display:flex;gap:8px;flex-wrap:wrap}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 18px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600;text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.btn.armed{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.sm{min-height:38px;padding:0 12px;font-size:14px}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn:active{transform:translateY(1px)}
+
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:99px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.chip.st-chiffrer{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+.chip.st-devis{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.chip.st-signe{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.chip.st-perdu{opacity:.7}
+.chip.ex{background:var(--tape);color:var(--tape-ink);border-color:transparent}
+
+.head{position:sticky;top:0;z-index:5;background:var(--bg);padding-block:16px 10px;margin-bottom:-6px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.head h2{font-size:clamp(26px,3.6vw,36px);line-height:1.05}
+.head .left{display:flex;gap:10px;align-items:center;min-width:0;flex-wrap:wrap}
+.head .actions{display:flex;gap:8px;flex-wrap:wrap}
+.back{display:none}
+.jump{display:flex;gap:4px;flex-wrap:wrap}
+.jump a{font:600 14px var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:8px}
+.jump a:hover{background:var(--surface);color:var(--ink)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;scroll-margin-top:90px}
+.card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.card-h h3{font-size:24px}
+.eyebrow{font:600 12px var(--f-body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.note{font-size:13px;color:var(--muted)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px 14px}
+.grid .wide{grid-column:span 2}
+.f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.f label{font-size:13px;font-weight:600;color:var(--muted)}
+.f input,.f select,.f textarea{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
+.f input:focus,.f select:focus,.f textarea:focus{border-color:var(--accent);background:var(--surface);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.f input.big{font:600 22px var(--f-display);letter-spacing:.01em}
+.unit{position:relative}
+.unit input{padding-right:44px;font-family:var(--f-num)}
+.unit span{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--muted);pointer-events:none}
+.check{display:flex;align-items:center;gap:10px;min-height:46px;font-weight:500}
+.check input{width:24px;height:24px;accent-color:var(--accent)}
+.contact{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+.tb{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tb .grp{display:flex;gap:4px;align-items:center;padding-right:6px;margin-right:2px;border-right:1px solid var(--line)}
+.tb .grp:last-child{border-right:0}
+.tool{min-width:46px;min-height:46px;border-radius:10px;border:1px solid transparent;background:transparent;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 9px;font-weight:600;font-size:14px}
+.tool[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.tool svg{width:22px;height:22px}
+.sw{width:32px;height:32px;border-radius:50%;border:3px solid var(--surface);box-shadow:0 0 0 1px var(--line);padding:0}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 3px var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--surface-2);padding:8px 12px;font-size:14px;font-weight:600;color:var(--muted);min-height:40px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.sheetbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.sheetbar input{flex:1 1 220px;min-height:44px;border:1px solid var(--line);border-radius:8px;padding:0 12px;background:var(--surface-2);font-weight:600}
+.cwrap{position:relative;display:flex;justify-content:center;align-items:center}
+.cstage{position:relative;overflow:hidden;background:#fff;box-shadow:0 0 0 1px var(--line),0 2px 14px rgba(0,0,0,.12);border-radius:4px;touch-action:none;flex:none}
+#cv{position:absolute;left:0;top:0;display:block;background:#fff;touch-action:none;transform-origin:0 0}
+.zoom{display:flex;align-items:center;gap:2px}
+.zoom .tool{min-width:40px;font-size:20px}
+.zoom #zReset{font:600 13px var(--f-num);min-width:58px}
+#drawSec{padding:14px}
+#edFull{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.strip{display:flex;gap:10px;overflow-x:auto;padding:12px 2px 2px}
+.strip button{flex:none;width:120px;border:2px solid var(--line);border-radius:10px;background:var(--surface);padding:0;overflow:hidden;text-align:left}
+.strip button[aria-current="true"]{border-color:var(--accent)}
+.strip img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#fff}
+.strip span{display:block;font-size:12px;padding:4px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.strip .add{display:flex;align-items:center;justify-content:center;min-height:118px;font-weight:600;color:var(--accent);border-style:dashed;text-align:center}
+.selbar{position:absolute;z-index:2;display:flex;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.22);transform:translate(-50%,calc(-100% - 14px));white-space:nowrap}
+.selbar .btn{min-height:40px}
+.bubble{position:absolute;left:50%;top:24px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;gap:8px;box-shadow:0 10px 40px rgba(0,0,0,.25);width:min(440px,calc(100% - 32px));flex-wrap:wrap;z-index:3}
+.bubble.padmode{width:min(360px,calc(100% - 20px));top:12px;padding:12px}
+.bubble.padmode > .btn{flex:1}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%}
+.pad button{min-height:58px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);font:500 26px var(--f-num);color:var(--ink);touch-action:manipulation}
+.pad button:active{background:var(--accent-soft)}
+.pad .del{font-size:22px}
+.units{display:flex;width:100%;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.units button{flex:1;border:0;background:var(--surface-2);min-height:44px;font-weight:600;color:var(--muted)}
+.units button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.padlbl{width:100%;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.bubble input{flex:1 1 180px;min-height:48px;font:500 20px var(--f-num);padding:0 12px;border:2px solid var(--accent);border-radius:8px;background:var(--surface-2)}
+#drawSec.full{position:fixed;inset:0;z-index:50;border-radius:0;display:flex;flex-direction:column;overflow:auto;
+  padding:calc(6px + env(safe-area-inset-top,0px)) max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px))}
+#drawSec.full .cwrap{flex:1;min-height:0}
+#drawSec.full .sheetbar, #drawSec.full .strip, #drawSec.full .card-h{display:none}
+/* Barre d'outils compacte (icônes) : le maximum de place pour la feuille */
+#drawSec .tb{margin-bottom:6px;gap:2px}
+#drawSec.full .tb{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+#drawSec.full .tb::-webkit-scrollbar{display:none}
+#drawSec .tb .grp{padding-right:4px;margin-right:0;gap:2px;flex:none}
+#drawSec .tool{min-width:40px;min-height:40px;padding:0 7px}
+#drawSec .tool span{display:none}
+#drawSec #pencilOnly span{display:inline;font-size:13px}
+#drawSec .tool svg{width:21px;height:21px}
+#drawSec .sw{width:26px;height:26px;border-width:2px}
+#drawSec .seg button{min-height:34px;padding:4px 8px;font-size:13px}
+#drawSec .zoom .tool{min-width:34px}
+#drawSec .zoom #zReset{min-width:50px;font-size:12px}
+#drawSec #edFullLbl{display:inline;font-size:13px}
+#drawSec.full #edFullLbl{display:none}
+#drawSec .tb{margin-bottom:8px}
+
+.drop{border:2px dashed var(--line);border-radius:12px;padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.filebtn{position:relative;overflow:hidden}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:14px}
+.tile{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+.tile img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--surface-2);cursor:zoom-in}
+.tile .doc{aspect-ratio:4/3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--surface-2);padding:10px;text-align:center}
+.tile .ext{font:600 20px var(--f-num);background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:8px 12px}
+.tile .doc b{font-size:14px;word-break:break-word;font-weight:600}
+.tile input{border:0;border-top:1px solid var(--line);padding:9px 10px;background:transparent;min-height:42px;font-size:14px;width:100%}
+.tile .acts{display:flex;gap:4px;padding:6px;border-top:1px solid var(--line)}
+.tile .acts .btn{flex:1}
+.tile .tag{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);padding:6px 10px 0}
+
+textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
+.quick{display:flex;gap:8px;flex-wrap:wrap}
+.quick button{border:1px solid var(--line);background:var(--surface-2);border-radius:99px;padding:8px 14px;font-size:14px;min-height:40px}
+
+.pans{width:100%;border-collapse:collapse}
+.pans-wrap{overflow-x:auto;margin:0 -4px}
+.pans th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:600;padding:0 6px 6px}
+.pans td{padding:4px 6px;vertical-align:middle}
+.pans input{width:100%;min-width:84px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-family:var(--f-num)}
+.pans td.name input{font-family:var(--f-body);min-width:110px}
+.pans td.out{font-family:var(--f-num);text-align:right;white-space:nowrap}
+.sub-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:22px 0 10px;padding-top:16px;border-top:1px solid var(--line)}
+.sub-h h4{margin:0;font:600 20px var(--f-display)}
+.checks{display:flex;flex-wrap:wrap;gap:8px}
+.ck{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-height:44px;font-weight:500;background:var(--surface-2);cursor:pointer}
+.ck:has(input:checked){border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+.ck input{width:20px;height:20px;accent-color:var(--accent);margin:0}
+.f.full{grid-column:1/-1}
+.cp-ville{display:grid;grid-template-columns:minmax(90px,.8fr) 2fr;gap:10px}
+.typepick{display:flex;gap:10px;flex-wrap:wrap}
+.typepick label{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-height:46px;font-weight:600}
+.typepick input{width:22px;height:22px;accent-color:var(--accent)}
+.totals{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.tot{flex:1 1 150px;background:var(--surface-2);border-radius:10px;padding:10px 14px;border-left:4px solid var(--tape)}
+.tot .v{font:500 22px var(--f-num)}
+.tot .l{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+
+.welcome{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted)}
+.welcome h2{color:var(--ink);font-size:34px;margin-bottom:8px}
+.endzone{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:13px}
+
+#viewer{position:fixed;inset:0;z-index:55;background:rgba(8,12,14,.92);display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+#viewer img{max-width:100%;max-height:100%;object-fit:contain}
+#viewer button{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:max(14px,env(safe-area-inset-right,0px))}
+
+#report{position:fixed;inset:0;z-index:45;background:var(--bg);overflow-y:auto}
+.rep-bar{position:sticky;top:0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--surface);border-bottom:1px solid var(--line);
+  padding:calc(10px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px))}
+.rep{max-width:860px;margin:24px auto;background:#fff;color:#1a2226;padding:40px;border-radius:6px;box-shadow:0 2px 20px rgba(0,0,0,.12)}
+.rep h1{font-size:34px}
+.rep h2{font-size:22px;border-bottom:2px solid #1a2226;padding-bottom:4px;margin:28px 0 12px}
+.rep table{width:100%;border-collapse:collapse;font-size:14px}
+.rep td,.rep th{border-bottom:1px solid #d0d8dc;padding:6px 8px;text-align:left}
+.rep td.r{text-align:right;font-family:var(--f-num)}
+.rep .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 24px;font-size:14px}
+.rep .kv div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px dotted #c6cfd3;padding:4px 0}
+.rep .kv span:first-child{color:#5a6870}
+.rep .pics{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.rep figure{margin:0;break-inside:avoid}
+.rep figure img{width:100%;border:1px solid #d0d8dc}
+.rep figcaption{font-size:13px;color:#5a6870;margin-top:4px}
+.rep .notes{white-space:pre-wrap;font-size:15px}
+.rep ul{font-size:14px;padding-left:20px}
+
+#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:99px;font-weight:600;opacity:0;transition:.25s;z-index:60;pointer-events:none}
+#toast.on{opacity:1;transform:translateX(-50%)}
+
+@media (max-width:900px){
+  #app{grid-template-columns:1fr}
+  #side{border-right:0;padding-right:max(16px,env(safe-area-inset-right,0px))}
+  #app.detail #side{display:none}
+  #app:not(.detail) #main{display:none}
+  .back{display:inline-flex}
+  .grid .wide{grid-column:1/-1}
+  .rep{padding:20px;margin:12px}
+  .rep .pics{grid-template-columns:1fr}
+}
+@media (max-width:560px){ .tool span{display:none} .jump{display:none} }
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+/* Étiquette contact 62 × 60 mm (imprimante thermique) */
+.label{width:62mm;height:60mm;box-sizing:border-box;padding:3.5mm;background:#fff;color:#000;display:flex;flex-direction:column;gap:1.4mm;font-family:var(--f-body);overflow:hidden}
+.label .lb-top{display:flex;justify-content:space-between;align-items:baseline;border-bottom:.4mm solid #000;padding-bottom:1mm;font:700 7.5pt var(--f-display);letter-spacing:.06em;text-transform:uppercase}
+.label .lb-name{font:700 15pt/1.05 var(--f-display);word-break:break-word}
+.label .lb-tel{font:600 13pt var(--f-num);letter-spacing:.02em}
+.label .lb-adr{font-size:9pt;line-height:1.25}
+.label .lb-mail{font-size:8pt;word-break:break-all}
+.label .lb-bot{margin-top:auto;display:flex;justify-content:space-between;font:600 7.5pt var(--f-body);border-top:.3mm dashed #000;padding-top:1mm}
+#labelSheet{display:none}
+.exp-list{display:flex;flex-direction:column;gap:10px}
+.exp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:12px 14px;min-height:56px}
+.exp-list button b{font-size:16px}
+.exp-list button span{font-size:13px;color:var(--muted)}
+.exp-list button:hover{border-color:var(--accent)}
+.lb-preview{display:flex;justify-content:center;background:var(--surface-2);border-radius:12px;padding:14px}
+.lb-preview .label{box-shadow:0 2px 12px rgba(0,0,0,.18)}
+@media print{
+  body{overflow:visible;background:#fff}
+  #app,.rep-bar,#toast,#viewer,#exportDlg,#settings{display:none!important}
+  body.print-label #report{display:none!important}
+  body.print-label #labelSheet{display:block}
+  #report{position:static;overflow:visible;background:#fff}
+  .rep{box-shadow:none;margin:0;max-width:none;padding:0}
+}
+</style>
+
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="brand">
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="9" fill="var(--accent)"/><path d="M7 22 20 11l13 11" fill="none" stroke="var(--accent-ink)" stroke-width="3" stroke-linejoin="round"/><rect x="8" y="27" width="24" height="6" rx="1.5" fill="var(--tape)"/><path d="M12 27v3M16 27v2M20 27v3M24 27v2M28 27v3" stroke="var(--tape-ink)" stroke-width="1.3"/></svg>
+      <div><h1>Relevés Chantier</h1><small>Visites &amp; prises de cotes</small></div>
+    </div>
+    <div class="pane" id="listPane">
+    <button class="btn primary" id="newBtn" type="button">+ Nouveau chantier</button>
+    <input class="search" id="q" type="search" placeholder="Rechercher un client, une ville…" style="margin-top:10px" autocomplete="off">
+    <div class="list" id="list" role="list"></div>
+    <div class="sidefoot">
+      <div class="row">
+        <button class="btn sm" id="exportAll" type="button">Sauvegarder tout</button>
+        <label class="btn sm filebtn" id="restoreLbl">Restaurer<input id="importFile" type="file" accept="application/json,.json"></label>
+      </div>
+      <span id="storeInfo">Données enregistrées sur cet appareil.</span>
+    </div>
+    </div>
+    <div class="pane" id="clientPane" hidden></div>
+    <div class="sidefoot" style="border-top:1px solid var(--line);padding-block:10px 14px">
+      <div class="syncbox"><span class="syncdot" id="syncDot"></span><span id="syncTxt">Synchronisation non configurée</span>
+        <button class="btn sm" type="button" id="syncBtn" style="margin-left:auto">Réglages</button></div>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<div id="viewer" hidden><img alt=""><button class="btn" type="button" id="viewerClose">Fermer</button></div>
+<div id="report" hidden></div>
+<div id="labelSheet"></div>
+<div id="exportDlg" hidden style="position:fixed;inset:0;z-index:57;background:rgba(10,15,18,.5);display:flex;align-items:center;justify-content:center;padding:16px">
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="expTitle" style="background:var(--surface);border-radius:16px;width:min(520px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <h3 id="expTitle" style="font-size:26px">Exporter le dossier</h3>
+    <div class="exp-list">
+      <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
+      <button type="button" data-exp="json"><b>Fichier JSON</b><span>Copie complète du dossier (avec photos et croquis), réimportable avec « Restaurer ».</span></button>
+      <button type="button" data-exp="label"><b>Étiquette contact 62 × 60 mm</b><span>Nom, téléphone, adresse et date de visite, pour l’imprimante d’étiquettes.</span></button>
+    </div>
+    <div class="lb-preview" id="lbPreview"></div>
+    <p class="note" id="expNote"></p>
+    <div class="foot"><button class="btn" type="button" id="expClose">Fermer</button></div>
+  </div>
+</div>
+<div id="settings" hidden><div class="box" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+  <h3 id="setTitle">Synchronisation</h3>
+  <div class="roles">
+    <label><input type="radio" name="role" value="tablette"><b>Tablette principale</b><span>Garde tous les dossiers et les envoie sur le serveur dès qu’il y a du réseau.</span></label>
+    <label><input type="radio" name="role" value="viewer"><b>Consultation</b><span>Mac ou PC du bureau : affiche les dossiers de la tablette, sans modifier.</span></label>
+  </div>
+  <div class="f"><label for="setToken">Code d’accès du serveur</label><input id="setToken" type="password" autocomplete="off" placeholder="Le même sur tous les appareils"></div>
+  <p class="note" id="setMsg"></p>
+  <div class="foot">
+    <button class="btn" type="button" id="setPushAll">Tout renvoyer</button>
+    <button class="btn" type="button" id="setTest">Tester</button>
+    <span style="flex:1"></span>
+    <button class="btn" type="button" id="setCancel">Annuler</button>
+    <button class="btn primary" type="button" id="setSave">Enregistrer</button>
+  </div>
+</div></div>
+<div id="numpad" hidden role="dialog" aria-label="Pavé numérique">
+  <div class="np-head"><span class="np-lbl" id="npLbl"></span></div>
+  <div class="np-val" id="npVal"></div>
+  <div class="pad" id="npKeys"></div>
+  <div class="foot" style="justify-content:stretch"><button class="btn" type="button" id="npClear" style="flex:1">Effacer</button><button class="btn primary" type="button" id="npOk" style="flex:2">OK</button></div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const num = v => { const x = parseFloat(String(v ?? '').replace(/\s/g,'').replace(',','.')); return isFinite(x) ? x : 0; };
+const fmt = (x, d=2) => x.toLocaleString('fr-FR', {minimumFractionDigits:d, maximumFractionDigits:d});
+const size = b => b > 1048576 ? fmt(b/1048576,1)+' Mo' : Math.max(1,Math.round(b/1024))+' Ko';
+const inFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
+let toastT;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2200); }
+function armed(btn, label, action){
+  if(btn.classList.contains('armed')){ action(); return; }
+  const old = btn.textContent; btn.classList.add('armed'); btn.textContent = label;
+  setTimeout(() => { if(btn.isConnected){ btn.classList.remove('armed'); btn.textContent = old; } }, 3500);
+}
+
+/* ---------- Stockage local (IndexedDB, repli en mémoire) ---------- */
+const DB = {
+  db:null, mem:{chantiers:new Map(), media:new Map(), outbox:new Map()},
+  async open(){
+    try{
+      this.db = await new Promise((res,rej)=>{
+        const r = indexedDB.open('releves-chantier', 2);
+        r.onupgradeneeded = () => { const d=r.result;
+          for(const st of ['chantiers','media','outbox']) if(!d.objectStoreNames.contains(st)) d.createObjectStore(st,{keyPath:'id'}); };
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      });
+    }catch{ this.db = null; }
+    try{ navigator.storage?.persist?.(); }catch{}
+  },
+  rq(r){ return new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); },
+  async all(st){ if(!this.db) return [...this.mem[st].values()]; return this.rq(this.db.transaction(st).objectStore(st).getAll()); },
+  async get(st,id){ if(!this.db) return this.mem[st].get(id); return this.rq(this.db.transaction(st).objectStore(st).get(id)); },
+  async rawPut(st,v){ if(!this.db){ this.mem[st].set(v.id,v); return; } const tx=this.db.transaction(st,'readwrite'); tx.objectStore(st).put(v); return new Promise((res,rej)=>{tx.oncomplete=res;tx.onerror=()=>rej(tx.error);}); },
+  async rawDel(st,id){ if(!this.db){ this.mem[st].delete(id); return; } const tx=this.db.transaction(st,'readwrite'); tx.objectStore(st).delete(id); return new Promise(res=>{tx.oncomplete=res;tx.onerror=res;}); },
+  /* Toute modification sur la tablette est mise en file d'envoi vers le serveur */
+  async put(st,v){ if(SYNC.role==='viewer') return; await this.rawPut(st,v); Sync.queue(st, v, 'put'); },
+  async del(st,id){ if(SYNC.role==='viewer') return; const v = st==='media' ? await this.get(st,id) : byId(id); await this.rawDel(st,id); Sync.queue(st, v||{id}, 'del'); }
+};
+
+/* ---------- Synchronisation : tablette → serveur → Mac/PC en consultation ---------- */
+const SYNC = {role:'tablette', token:'', base:'api/releves', last:0, state:'off', busy:false, pending:0, timer:null};
+try{ SYNC.role = localStorage.getItem('rc-role') || 'tablette'; SYNC.token = localStorage.getItem('rc-token') || ''; SYNC.last = +localStorage.getItem('rc-last') || 0; }catch{}
+const Sync = {
+  async api(method, path, body){
+    const r = await fetch(SYNC.base + path, {method, cache:'no-store', headers:{'x-releves-token':SYNC.token, ...(body?{'content-type':'application/json'}:{})}, body: body?JSON.stringify(body):undefined});
+    if(r.status===401) throw Object.assign(new Error('Code d’accès refusé par le serveur'), {auth:true});
+    if(!r.ok){ let m='Erreur serveur ('+r.status+')'; try{ m=(await r.json()).error||m; }catch{} throw new Error(m); }
+    return r.json();
+  },
+  isExample(st, v){ return st==='chantiers' ? !!v.exemple : !!byId(v.chantierId)?.exemple; },
+  async queue(st, v, op){
+    if(SYNC.role!=='tablette' || st==='outbox' || !v || this.isExample(st, v)) return;
+    await DB.rawPut('outbox', {id:st+':'+v.id, st, rid:v.id, op, t:Date.now()+Math.random()});
+    this.schedule(1500);
+  },
+  schedule(ms){ clearTimeout(SYNC.timer); SYNC.timer = setTimeout(()=>this.flush(), ms); this.refreshStatus(); },
+  async flush(){
+    if(SYNC.role!=='tablette' || !SYNC.token || SYNC.busy) return this.refreshStatus();
+    if(!navigator.onLine){ SYNC.state='offline'; return this.refreshStatus(); }
+    SYNC.busy=true; SYNC.state='sync'; this.refreshStatus();
+    try{
+      const items = (await DB.all('outbox')).sort((a,b)=>(a.st==='chantiers'?0:1)-(b.st==='chantiers'?0:1) || a.t-b.t);
+      for(const it of items){
+        const route = it.st==='chantiers' ? '/chantiers/' : '/media/';
+        if(it.op==='put'){ const v = await DB.get(it.st, it.rid); if(v) await this.api('PUT', route+encodeURIComponent(it.rid), v); }
+        else await this.api('DELETE', route+encodeURIComponent(it.rid));
+        const now = await DB.get('outbox', it.id);
+        if(now && now.t===it.t) await DB.rawDel('outbox', it.id);   // ne retire pas une modification arrivée pendant l'envoi
+      }
+      SYNC.last=Date.now(); try{ localStorage.setItem('rc-last', SYNC.last); }catch{}
+      SYNC.state='ok';
+      if((await DB.all('outbox')).length) this.schedule(500);
+    }catch(e){ SYNC.state = e.auth ? 'auth' : 'err'; SYNC.error = e.message; this.schedule(60000); }
+    finally{ SYNC.busy=false; this.refreshStatus(); }
+  },
+  async pushAll(){
+    for(const c of await DB.all('chantiers')) if(!c.exemple) await DB.rawPut('outbox', {id:'chantiers:'+c.id, st:'chantiers', rid:c.id, op:'put', t:Date.now()+Math.random()});
+    const ex = new Set(S.list.filter(c=>c.exemple).map(c=>c.id));
+    for(const m of await DB.all('media')) if(!ex.has(m.chantierId)) await DB.rawPut('outbox', {id:'media:'+m.id, st:'media', rid:m.id, op:'put', t:Date.now()+Math.random()});
+    this.flush();
+  },
+  async refreshStatus(){
+    const dot=$('#syncDot'), txt=$('#syncTxt'); if(!dot) return;
+    const hhmm = SYNC.last ? new Date(SYNC.last).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : '';
+    let cls='', t='Synchronisation non configurée';
+    if(SYNC.token){
+      if(SYNC.role==='viewer'){
+        if(SYNC.state==='ok'){ cls='ok'; t='Consultation · à jour '+hhmm; }
+        else if(SYNC.state==='auth'){ cls='err'; t='Code d’accès refusé'; }
+        else if(SYNC.state==='err'){ cls='err'; t='Serveur injoignable'; }
+        else t='Consultation';
+      } else {
+        const n = (await DB.all('outbox')).length;
+        if(SYNC.state==='auth'){ cls='err'; t='Code d’accès refusé'; }
+        else if(SYNC.state==='sync'){ cls='wait'; t='Envoi en cours…'; }
+        else if(n){ cls='wait'; t = `${n} modification${n>1?'s':''} à envoyer` + (SYNC.state==='offline'?' (hors ligne)':SYNC.state==='err'?' (serveur injoignable)':''); }
+        else { cls='ok'; t = 'Tout est envoyé' + (hhmm?' · '+hhmm:''); }
+      }
+    }
+    dot.className='syncdot '+cls; txt.textContent=t;
+  }
+};
+window.addEventListener('online', () => Sync.flush());
+function openSettings(){
+  const d=$('#settings'); d.hidden=false;
+  $$('input[name=role]', d).forEach(r => r.checked = r.value===SYNC.role);
+  $('#setToken').value = SYNC.token; $('#setMsg').textContent = SYNC.error && SYNC.state!=='ok' ? SYNC.error : '';
+  $('#setPushAll').hidden = SYNC.role!=='tablette';
+}
+$('#syncBtn').onclick = openSettings;
+$('#setCancel').onclick = () => $('#settings').hidden = true;
+$('#settings').onclick = e => { if(e.target.id==='settings') $('#settings').hidden=true; };
+$('#setTest').onclick = async () => {
+  const keep=SYNC.token; SYNC.token=$('#setToken').value.trim(); $('#setMsg').textContent='Test en cours…';
+  try{ const r=await Sync.api('GET','/status'); $('#setMsg').textContent=`Connexion réussie : ${r.chantiers} dossier(s) et ${r.media} photo(s)/croquis sur le serveur.`; }
+  catch(e){ $('#setMsg').textContent = e.auth ? 'Le serveur refuse ce code.' : 'Serveur injoignable depuis cet appareil. L’appli doit être ouverte depuis son adresse sur le Raspberry.'; }
+  SYNC.token=keep;
+};
+$('#setPushAll').onclick = async () => { await Sync.pushAll(); $('#setMsg').textContent='Tous les dossiers sont en file d’envoi.'; };
+$('#setSave').onclick = async () => {
+  const role = $('input[name=role]:checked')?.value || 'tablette', token = $('#setToken').value.trim();
+  const changedRole = role!==SYNC.role;
+  SYNC.role=role; SYNC.token=token; SYNC.state='off';
+  try{ localStorage.setItem('rc-role',role); localStorage.setItem('rc-token',token); }catch{}
+  $('#settings').hidden=true;
+  if(changedRole){ await flushDrawing(true); S.cur=null; S.media=[]; E.m=null; S.list=[]; await load(); }
+  else if(role==='viewer') await loadRemote(true);
+  else { if(token && !SYNC.last) await Sync.pushAll(); else Sync.flush(); }
+  toast(role==='viewer' ? 'Mode consultation' : 'Réglages enregistrés');
+};
+setInterval(() => { if(SYNC.role==='tablette') Sync.flush(); }, 120000);
+
+/* ---------- Modèle ---------- */
+const STATUTS = {chiffrer:'À chiffrer', devis:'Devis envoyé', signe:'Signé', perdu:'Sans suite'};
+const blankToiture = () => ({mode:'rampant', pans:[{nom:'Pan 1',longueur:'',largeur:'',pente:''}], lineaires:{}, existante:'', etat:'', charpente:'', ondulit:false, isolation:'', acces:''});
+const blankPortail = () => ({type:'', largeur:'', hauteur:'', hPiliers:'', sectionPiliers:'', refoulement:'', sens:'', pente:'', remplissage:'', ral:'', motorisation:'', cloture:'', portillon:''});
+const newChantier = () => ({id:uid(), client:'', nom:'', prenom:'', tel:'', email:'', adresse:'', cp:'', ville:'', date:new Date().toISOString().slice(0,10), statut:'chiffrer',
+  types:[], toiture:blankToiture(), portail:blankPortail(), notes:'', geo:null, created:Date.now(), updated:Date.now()});
+/* Nom affiché, adresse complète, valeurs à cases multiples */
+const fullName = c => c.client || [c.nom, c.prenom].filter(Boolean).join(' ');
+const fullAdr = c => [c.adresse, [c.cp, c.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+const listVal = v => Array.isArray(v) ? v.join(', ') : (v || '');
+function normalize(c){
+  if(c.nom===undefined){ c.nom = c.client || ''; c.prenom = ''; }
+  c.prenom ??= ''; c.cp ??= ''; c.ville ??= '';
+  const t = c.toiture || {};
+  for(const k of ['existante','etat','charpente','isolation']) if(t[k] && !Array.isArray(t[k])) t[k] = [t[k]];
+  if(t.ondulit === true && !t.produit) t.produit = ['Ondulit'];
+  const p = c.portail || {};
+  for(const k of ['type','sens','remplissage']) if(p[k] && !Array.isArray(p[k])) p[k] = [p[k]];
+  return c;
+}
+const LINEAIRES = [['faitage','Faîtage'],['rives','Rives'],['egouts','Égouts / gouttières'],['noues','Noues'],['aretiers','Arêtiers'],['brizi','Brizi (bavettes de raccord)'],['solins','Solins'],['closoirs','Closoirs']];
+const toitureTotals = t => {
+  let surf = 0;
+  const pans = (t.pans||[]).map(p => {
+    const L=num(p.longueur), l=num(p.largeur), pente=num(p.pente);
+    const ramp = t.mode==='plat' ? L/Math.cos(Math.atan(pente/100)) : L;
+    const s = ramp*l; surf += s;
+    return {ramp, s, deg: Math.atan(pente/100)*180/Math.PI};
+  });
+  return {surf, pans, lin: LINEAIRES.reduce((a,[k]) => a + num(t.lineaires?.[k]), 0)};
+};
+
+/* ---------- État ---------- */
+const S = {list:[], cur:null, media:[], q:''};
+let saveT;
+function touch(){ if(!S.cur || SYNC.role==='viewer') return; S.cur.updated=Date.now(); clearTimeout(saveT); const c=S.cur; saveT=setTimeout(async()=>{ await DB.put('chantiers', c); renderList(); }, 400); }
+const byId = id => S.list.find(c=>c.id===id);
+const sorted = () => [...S.list].sort((a,b)=>b.updated-a.updated);
+
+async function load(){
+  await DB.open();
+  document.body.classList.toggle('viewer', SYNC.role==='viewer');
+  if(SYNC.role==='viewer'){ await loadRemote(); return; }
+  S.list = await DB.all('chantiers');
+  if(!S.list.length){ await seed(); S.list = await DB.all('chantiers'); }
+  S.list.forEach(normalize);
+  renderList(); Sync.flush();
+  if(window.innerWidth > 900 && S.list.length) await openChantier(sorted()[0].id); else renderMain();
+  storeInfo();
+}
+/* Mode consultation : les dossiers viennent du serveur, rien n'est modifié */
+async function loadRemote(keepCur){
+  $('#storeInfo').textContent = 'Mode consultation : dossiers envoyés par la tablette.';
+  if(!SYNC.token){ S.list=[]; renderList(); $('#main').innerHTML = `<div class="welcome"><h2>Mode consultation</h2><p>Entrez le code d’accès du serveur dans <b>Réglages</b> (en bas à gauche) pour afficher les dossiers de la tablette.</p></div>`; Sync.refreshStatus(); return; }
+  try{
+    S.list = (await Sync.api('GET','/chantiers')).map(normalize); SYNC.state='ok'; SYNC.last=Date.now();
+  }catch(e){
+    SYNC.state = e.auth?'auth':'err'; Sync.refreshStatus();
+    if(!S.list.length) $('#main').innerHTML = `<div class="welcome"><h2>${e.auth?'Code d’accès refusé':'Serveur injoignable'}</h2><p>${e.auth?'Vérifiez le code dans Réglages.':'Vérifiez la connexion internet puis touchez Actualiser.'}</p></div>`;
+    return;
+  }
+  Sync.refreshStatus(); renderList();
+  const old = S.cur, fresh = keepCur && old && byId(old.id);
+  if(fresh){
+    S.cur = fresh;
+    if(fresh.updated !== old.updated){ S.media = await Sync.api('GET', `/chantiers/${encodeURIComponent(fresh.id)}/media`); renderMain(); }
+  }
+  else if(window.innerWidth > 900 && S.list.length) await openChantier(sorted()[0].id);
+  else renderMain();
+}
+window.addEventListener('focus', () => { if(SYNC.role==='viewer' && SYNC.token && Date.now()-SYNC.last > 20000) loadRemote(true); });
+setInterval(() => { if(SYNC.role==='viewer' && SYNC.token && !document.hidden) loadRemote(true); }, 60000);
+async function storeInfo(){
+  if(SYNC.role==='viewer') return;
+  try{
+    const e = await navigator.storage.estimate(); const p = await navigator.storage.persisted?.();
+    $('#storeInfo').textContent = `${fmt((e.usage||0)/1048576,1)} Mo utilisés sur cet appareil${p?' · stockage protégé':''}.`;
+  }catch{}
+}
+
+/* ---------- Liste ---------- */
+function renderList(){
+  const q = S.q.trim().toLowerCase();
+  const items = sorted().filter(c => !q || `${fullName(c)} ${c.prenom} ${fullAdr(c)} ${c.tel}`.toLowerCase().includes(q));
+  $('#list').innerHTML = items.map(c => `
+    <button class="item" role="listitem" type="button" data-id="${c.id}" aria-current="${S.cur?.id===c.id}">
+      <b>${esc(fullName(c)||'Nouveau client')}</b>
+      <span class="meta">${c.exemple?'<span class="chip ex">Exemple</span>':''}<span class="chip st-${c.statut}">${STATUTS[c.statut]||''}</span></span>
+      <span class="meta"><span class="num">${c.date?new Date(c.date).toLocaleDateString('fr-FR'):''}</span><span>${esc((c.ville||c.adresse||'').slice(0,34))}</span></span>
+    </button>`).join('') || `<p class="note" style="padding:12px">Aucun chantier ne correspond.</p>`;
+}
+$('#list').addEventListener('click', e => { const b=e.target.closest('.item'); if(b) openChantier(b.dataset.id); });
+$('#q').addEventListener('input', e => { S.q=e.target.value; renderList(); });
+$('#newBtn').addEventListener('click', async () => {
+  const c = newChantier(); await DB.put('chantiers', c); S.list.push(c);
+  await openChantier(c.id); $('#main').scrollTop = 0; setTimeout(()=>$('#f_client')?.focus(), 60);
+});
+
+async function openChantier(id){
+  await flushDrawing();
+  S.cur = byId(id);
+  if(SYNC.role==='viewer'){
+    try{ S.media = (await Sync.api('GET', `/chantiers/${encodeURIComponent(id)}/media`)).sort((a,b)=>a.created-b.created); }
+    catch{ S.media=[]; toast('Photos et croquis indisponibles'); }
+  } else {
+    const all = await DB.all('media');
+    S.media = all.filter(m=>m.chantierId===id).sort((a,b)=>a.created-b.created);
+  }
+  $('#app').classList.add('detail'); S.side='client';
+  renderList(); renderMain();
+}
+/* En paysage (écran large), les coordonnées du client remplacent la liste dans la colonne de gauche */
+const WIDE = window.matchMedia('(min-width:901px)');
+const clientInSide = () => WIDE.matches && S.cur && S.side==='client';
+WIDE.addEventListener?.('change', async () => { await flushDrawing(); renderMain(); });
+function clientHTML(side){
+  return side ? `
+    <section class="card" id="secClient">
+      <div class="card-h"><h3>Contact client</h3></div>
+      <div class="stack">
+        <div class="two">${field('nom','Nom',{ph:'ex. Payet'})}${field('prenom','Prénom',{ph:'ex. Marie'})}</div>
+        ${field('tel','Téléphone',{type:'tel', ph:'0692 …'})}
+        ${field('email','E-mail',{type:'email'})}
+        ${field('adresse','Adresse',{ph:'N° et rue, lieu-dit'})}
+        <div class="cp-ville">${field('cp','Code postal',{ph:'97410', num:true})}${field('ville','Ville',{ph:'ex. Saint-Pierre'})}</div>
+        ${field('date','Date de visite',{type:'date'})}
+        ${field('statut','Statut',{options:Object.entries(STATUTS), noBlank:true})}
+      </div>
+      <div class="contact" id="contact"></div>
+    </section>` : `
+    <section class="card" id="secClient">
+      <div class="card-h"><h3>Coordonnées client</h3><span class="eyebrow">Enregistré automatiquement</span></div>
+      <div class="grid">
+        ${field('nom','Nom',{ph:'ex. Payet'})}
+        ${field('prenom','Prénom',{ph:'ex. Marie'})}
+        ${field('tel','Téléphone',{type:'tel', ph:'0692 …'})}
+        ${field('email','E-mail',{type:'email'})}
+        ${field('adresse','Adresse',{wide:true, ph:'N° et rue, lieu-dit'})}
+        ${field('cp','Code postal',{ph:'97410', num:true})}
+        ${field('ville','Ville',{ph:'ex. Saint-Pierre'})}
+        ${field('date','Date de visite',{type:'date'})}
+        ${field('statut','Statut',{options:Object.entries(STATUTS), noBlank:true})}
+      </div>
+      <div class="contact" id="contact"></div>
+    </section>`;
+}
+function renderSide(){
+  const lp=$('#listPane'), cp=$('#clientPane');
+  if(clientInSide()){
+    lp.hidden=true; cp.hidden=false;
+    cp.innerHTML = `<button class="btn sm" type="button" id="toList">‹ Tous les chantiers</button>${clientHTML(true)}`;
+    cp.oninput = onField; lockIfViewer();
+    $('#toList').onclick = async () => { await flushDrawing(); S.side='list'; renderMain(); };
+  } else { lp.hidden=false; cp.hidden=true; cp.innerHTML=''; }
+}
+
+/* ---------- Pavé numérique pour les cases de chiffres (iPad) ---------- */
+const TOUCH = window.matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 1;
+const NP = {el:null, v:''};
+(() => {
+  const keys = ['7','8','9','4','5','6','1','2','3',',','0','del'];
+  $('#npKeys').innerHTML = keys.map(k => `<button type="button" data-k="${k}" ${k==='del'?'class="del" aria-label="Effacer le dernier chiffre"':''}>${k==='del'?'⌫':k}</button>`).join('');
+})();
+const fmtTel = d => d.replace(/\D/g,'').slice(0,10).replace(/(\d{4})(\d{0,2})(\d{0,2})(\d{0,2})/, (m,a,b,c,e)=>[a,b,c,e].filter(Boolean).join(' '));
+function npShow(){
+  const el=NP.el, kind=el.dataset.pad;
+  $('#npLbl').textContent = el.dataset.label || '';
+  const shown = kind==='tel' ? fmtTel(NP.v) : NP.v;
+  $('#npVal').innerHTML = `${esc(shown) || '<span style="color:var(--muted)">0</span>'}${el.dataset.unit?` <small>${esc(el.dataset.unit)}</small>`:''}`;
+  $('#npKeys [data-k=","]').disabled = kind!=='dec';
+}
+function npOpen(el){
+  if(SYNC.role==='viewer') return;
+  npClose(true);
+  NP.el = el; NP.v = el.dataset.pad==='tel' ? el.value.replace(/\D/g,'') : el.value.replace('.', ',');
+  el.classList.add('padfocus'); npShow(); $('#numpad').hidden = false; NP.t = Date.now();
+  // garder la case visible au-dessus du pavé
+  const scroller = el.closest('#main, #clientPane');
+  const pad = $('#numpad').getBoundingClientRect(), r = el.getBoundingClientRect();
+  if(scroller && r.bottom > pad.top - 12) scroller.scrollBy({top: r.bottom - pad.top + 24, behavior:'smooth'});
+}
+function npCommit(){
+  const el=NP.el; if(!el) return;
+  const kind=el.dataset.pad, v = kind==='tel' ? fmtTel(NP.v) : NP.v.replace(/,$/,'');
+  if(el.value !== v){ el.value = v; el.dispatchEvent(new Event('input', {bubbles:true})); }
+}
+function npClose(commit){ if(NP.el){ if(commit) npCommit(); NP.el.classList.remove('padfocus'); } NP.el=null; $('#numpad').hidden = true; }
+$('#npKeys').addEventListener('click', e => {
+  const b=e.target.closest('[data-k]'); if(!b || !NP.el || Date.now() - NP.t < 400) return;   // ignore le « clic » du même appui qui a ouvert le pavé
+  const k=b.dataset.k, kind=NP.el.dataset.pad, max = kind==='cp' ? 5 : kind==='tel' ? 10 : 8;
+  if(k==='del') NP.v = NP.v.slice(0,-1);
+  else if(k===','){ if(!NP.v.includes(',')) NP.v = (NP.v||'0') + ','; }
+  else if(NP.v.replace(/\D/g,'').length < max) NP.v = (kind==='dec' && NP.v==='0' ? '' : NP.v) + k;
+  npShow(); npCommit();
+});
+$('#npClear').onclick = () => { if(Date.now()-NP.t<400) return; NP.v=''; npShow(); npCommit(); };
+$('#npOk').onclick = () => { if(Date.now()-NP.t<400) return; npClose(true); };
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest?.('input[data-pad]');
+  if(el && TOUCH){ e.preventDefault(); npOpen(el); return; }
+  if(NP.el && !e.target.closest('#numpad')) npClose(true);
+}, true);
+/* iPad : toutes les cases de texte sont verrouillées tant qu'on ne les touche pas.
+   L'écriture manuscrite du Pencil (Griffonner) ne peut donc jamais démarrer dedans ;
+   un appui (doigt ou Pencil) déverrouille la case et ouvre le clavier. */
+const KB_SEL = 'input[type=text]:not([data-pad]):not(#bubbleIn), input[type=email], input[type=search], input[type=password], input:not([type]), textarea';
+function kbLock(root){
+  if(!TOUCH || SYNC.role==='viewer') return;
+  const list = root.matches?.(KB_SEL) ? [root] : [...(root.querySelectorAll?.(KB_SEL) || [])];
+  for(const el of list){ if(el.dataset.kb || el.readOnly || el === document.activeElement) continue; el.dataset.kb = '1'; el.readOnly = true; }
+}
+new MutationObserver(ms => { for(const m of ms) for(const n of m.addedNodes) if(n.nodeType===1) kbLock(n); })
+  .observe(document.body, {childList:true, subtree:true});
+kbLock(document.body);
+/* L'iPad n'affiche le clavier que si la case reçoit le focus pendant le « tap » (événement click) et n'est
+   pas verrouillée à ce moment-là : on empêche donc le focus automatique (mousedown), puis au click on
+   déverrouille et on donne le focus nous-mêmes. */
+document.addEventListener('mousedown', e => {
+  const el = e.target.closest?.('[data-kb]');
+  if(el && document.activeElement !== el) e.preventDefault();
+}, true);
+document.addEventListener('click', e => {
+  const el = e.target.closest?.('[data-kb]'); if(!el || SYNC.role==='viewer') return;
+  el.readOnly = false;
+  if(document.activeElement === el && el.dataset.kbOpen) return;   // déjà en saisie : laisser placer le curseur
+  if(document.activeElement === el) el.blur();
+  el.focus();
+  el.dataset.kbOpen = '1';
+  try{ const n = el.value.length; el.setSelectionRange(n, n); }catch{}
+}, true);
+document.addEventListener('focusout', e => {
+  const el=e.target; if(!el.dataset?.kb || SYNC.role==='viewer') return;
+  delete el.dataset.kbOpen; el.readOnly = true;
+}, true);
+
+/* ---------- Champs liés aux données ---------- */
+const get = (o,p) => p.split('.').reduce((a,k)=>a?.[k], o);
+const set = (o,p,v) => { const ks=p.split('.'); const last=ks.pop(); ks.reduce((a,k)=>a[k]??=({}), o)[last]=v; };
+function field(path, label, opt={}){
+  const v = get(S.cur, path) ?? '';
+  const id = 'f_'+path.replace(/\./g,'_');
+  const cls = opt.wide ? ' wide' : '';
+  if(opt.options) return `<div class="f${cls}"><label for="${id}">${label}</label><select id="${id}" data-path="${path}">
+    ${opt.noBlank?'':'<option value="">—</option>'}${opt.options.map(o=>{ const [val,lab] = Array.isArray(o)?o:[o,o]; return `<option value="${esc(val)}" ${val===v?'selected':''}>${esc(lab)}</option>`; }).join('')}</select></div>`;
+  if(opt.checks){
+    const arr = Array.isArray(v) ? v : (v ? [v] : []);
+    return `<div class="f full"><span class="lbl">${label}</span><div class="checks">${opt.checks.map(o=>
+      `<label class="ck"><input type="checkbox" data-multi="${path}" value="${esc(o)}" ${arr.includes(o)?'checked':''}>${esc(o)}</label>`).join('')}</div></div>`;
+  }
+  if(opt.check) return `<label class="check${cls}"><input type="checkbox" id="${id}" data-path="${path}" ${v?'checked':''}>${label}</label>`;
+  const padKind = opt.unit ? 'dec' : opt.num ? 'cp' : opt.type==='tel' ? 'tel' : '';
+  const inp = `<input id="${id}" data-path="${path}" value="${esc(v)}" type="${opt.type||'text'}" ${padKind?`data-pad="${padKind}" data-unit="${opt.unit||''}" data-label="${esc(label)}"${TOUCH?' readonly':''}`:''} ${opt.unit?'inputmode="decimal"':opt.num?'inputmode="numeric" maxlength="5"':''} ${opt.big?'class="big"':''} placeholder="${esc(opt.ph||'')}" autocomplete="off">`;
+  return `<div class="f${cls}"><label for="${id}">${label}</label>${opt.unit?`<div class="unit">${inp}<span>${opt.unit}</span></div>`:inp}</div>`;
+}
+
+/* ---------- Page du chantier ---------- */
+function renderMain(){
+  const m = $('#main');
+  renderSide();
+  const side = clientInSide();
+  if(!S.cur){ m.innerHTML = `<div class="welcome"><h2>Aucun chantier ouvert</h2><p>Choisissez un chantier dans la liste ou créez-en un.</p></div>`; return; }
+  const c = S.cur;
+  m.innerHTML = `<div class="page">
+    <header class="head">
+      <div class="left"><button class="btn sm ghost back" type="button" id="backBtn">‹ Chantiers</button>
+        <h2 id="title">${esc(fullName(c)||'Nouveau client')}</h2>${c.exemple?'<span class="chip ex">Exemple</span>':''}</div>
+      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a><a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
+      <div class="actions">${SYNC.role==='viewer'?'<button class="btn sm" type="button" id="refreshBtn">Actualiser</button>':''}<button class="btn sm" type="button" id="openExport">Exporter</button><button class="btn sm primary" type="button" id="openReport">Rapport</button></div>
+    </header>
+
+    ${side?'':clientHTML(false)}
+
+    <section class="card" id="secMes">${mesuresHTML()}</section>
+
+    <section class="card" id="drawSec">${drawHTML()}</section>
+
+    <section class="card" id="secFiles">
+      <div class="card-h"><h3>Photos &amp; fichiers</h3><span class="eyebrow">Photos, PDF, plans, devis…</span></div>
+      <div class="drop" id="drop">
+        <label class="btn primary filebtn">Prendre une photo<input type="file" accept="image/*" capture="environment" id="camIn"></label>
+        <label class="btn filebtn">Importer photos ou fichiers<input type="file" multiple id="fileIn"></label>
+        <span class="note">ou glissez-les ici depuis un ordinateur</span>
+      </div>
+      <div class="gallery" id="gallery"></div>
+    </section>
+
+    <section class="card" id="secNotes">
+      <div class="card-h"><h3>Remarques</h3><span class="eyebrow">Micro du clavier pour dicter</span></div>
+      <div class="quick" id="quick">${QUICK.map(q=>`<button type="button">${esc(q)}</button>`).join('')}</div>
+      <div class="f" style="margin-top:12px"><label for="f_notes">Notes de visite</label><textarea class="notes" id="f_notes" data-path="notes" placeholder="Contraintes d'accès, souhaits du client, points à vérifier…">${esc(c.notes)}</textarea></div>
+    </section>
+
+
+    <div class="endzone"><span>Créé le ${new Date(c.created).toLocaleDateString('fr-FR')}</span>
+      <button class="btn sm danger" type="button" id="delChantier">Supprimer ce chantier</button></div>
+  </div>`;
+
+  $('#backBtn').onclick = async () => { await flushDrawing(); $('#app').classList.remove('detail'); };
+  $('#openReport').onclick = async () => { await flushDrawing(); openReport(); };
+  $('#openExport').onclick = async () => { await flushDrawing(); openExport(); };
+  if($('#refreshBtn')) $('#refreshBtn').onclick = async () => { const o=S.cur; await loadRemote(true); if(o && S.cur===byId(o.id)){ S.media = await Sync.api('GET', `/chantiers/${encodeURIComponent(o.id)}/media`).catch(()=>S.media); renderMain(); } toast('Dossiers à jour'); };
+  $$('.jump a', m).forEach(a => a.onclick = e => { e.preventDefault(); $(a.getAttribute('href')).scrollIntoView({behavior:'smooth'}); });
+  m.querySelector('.page').oninput = onField;
+  renderContact(); renderGallery(); mountDrawing(); bindMesures(); updateTotals();
+  $('#quick').onclick = e => { const b=e.target.closest('button'); if(!b) return; const ta=$('#f_notes');
+    ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/,'\n') : '') + '• ' + b.textContent; S.cur.notes = ta.value; touch(); };
+  $('#delChantier').onclick = e => armed(e.currentTarget, 'Confirmer : tout effacer', async () => {
+    await flushDrawing(true);
+    for(const x of S.media) await DB.del('media', x.id);
+    await DB.del('chantiers', c.id); S.list = S.list.filter(x=>x.id!==c.id); S.cur=null; S.media=[]; E.m=null;
+    $('#app').classList.remove('detail'); renderList(); renderMain(); toast('Chantier supprimé'); storeInfo();
+  });
+  setupFiles();
+  lockIfViewer();
+}
+function lockIfViewer(){
+  if(SYNC.role!=='viewer') return;
+  $$('#main input, #main select, #main textarea, #clientPane input, #clientPane select').forEach(el => {
+    if(el.type==='file') return;
+    if(el.tagName==='SELECT' || el.type==='checkbox' || el.type==='date') el.disabled = true; else el.readOnly = true;
+    if(el.placeholder) el.placeholder = '—';
+  });
+  $$('#main [data-mode]').forEach(b => b.disabled = true);
+}
+function onField(e){
+  const el = e.target;
+  if(el.dataset.path){
+    set(S.cur, el.dataset.path, el.type==='checkbox' ? el.checked : el.value); touch();
+    if(el.dataset.path==='nom' || el.dataset.path==='prenom'){
+      S.cur.client = [S.cur.nom, S.cur.prenom].map(x=>(x||'').trim()).filter(Boolean).join(' ');
+      $('#title').textContent = S.cur.client || 'Nouveau client';
+    }
+    if(['tel','adresse','cp','ville','email'].includes(el.dataset.path)) renderContact();
+    updateTotals();
+  }
+  if(el.dataset.multi){
+    const p = el.dataset.multi;
+    set(S.cur, p, $$('input[data-multi]').filter(x=>x.dataset.multi===p && x.checked).map(x=>x.value)); touch();
+  }
+  if(el.dataset.pan!==undefined){ S.cur.toiture.pans[+el.dataset.pan][el.dataset.k] = el.value; touch(); updateTotals(); }
+}
+function renderContact(){
+  const c=S.cur, box=$('#contact'); if(!box) return;
+  const tel = (c.tel||'').replace(/[^\d+]/g,'');
+  box.innerHTML = `
+    ${tel?`<a class="btn sm" href="tel:${tel}">Appeler</a>`:''}
+    ${c.email?`<a class="btn sm" href="mailto:${esc(c.email)}">Écrire un e-mail</a>`:''}
+    ${fullAdr(c)?`<a class="btn sm" href="https://maps.apple.com/?q=${encodeURIComponent(fullAdr(c))}" target="_blank" rel="noopener">Itinéraire</a>`:''}
+    <button class="btn sm" type="button" id="geoBtn">${c.geo?`Position GPS ✓ <span class="num">${c.geo.lat}, ${c.geo.lng}</span>`:'Enregistrer la position GPS'}</button>`;
+  $('#geoBtn').onclick = () => {
+    if(!navigator.geolocation){ toast('Position indisponible ici'); return; }
+    $('#geoBtn').textContent = 'Localisation…';
+    navigator.geolocation.getCurrentPosition(p => { c.geo={lat:+p.coords.latitude.toFixed(6), lng:+p.coords.longitude.toFixed(6)}; touch(); renderContact(); toast('Position enregistrée'); },
+      () => { $('#geoBtn').textContent='Position refusée'; }, {enableHighAccuracy:true, timeout:15000});
+  };
+}
+
+/* ---------- Photos & fichiers ---------- */
+function renderGallery(){
+  const g = $('#gallery'); if(!g) return;
+  const items = S.media.filter(x=>x.kind==='photo' || x.kind==='fichier');
+  g.innerHTML = items.length ? items.map(x => x.kind==='photo' ? `
+    <div class="tile" data-id="${x.id}">
+      ${x.ops?.length?'<span class="tag">Annotée</span>':''}
+      <img src="${x.data}" alt="${esc(x.legende||'Photo')}" data-view loading="lazy">
+      <input value="${esc(x.legende)}" placeholder="Légende…" data-leg aria-label="Légende">
+      <div class="acts"><button class="btn sm" type="button" data-annot>Annoter</button><button class="btn sm danger" type="button" data-del>Supprimer</button></div>
+    </div>` : `
+    <div class="tile" data-id="${x.id}">
+      <div class="doc"><span class="ext">${esc((x.name.split('.').pop()||'?').slice(0,4).toUpperCase())}</span><b>${esc(x.name)}</b><span class="note">${size(x.size||0)}</span></div>
+      <input value="${esc(x.legende)}" placeholder="Note sur le fichier…" data-leg aria-label="Note">
+      <div class="acts"><button class="btn sm" type="button" data-open>Ouvrir</button><button class="btn sm danger" type="button" data-del>Supprimer</button></div>
+    </div>`).join('')
+    : `<p class="note" style="grid-column:1/-1;margin:0">Aucune photo ni fichier pour l’instant.</p>`;
+  g.oninput = async e => { const t=e.target.closest('[data-leg]'); if(!t) return; const x=S.media.find(m=>m.id===t.closest('.tile').dataset.id); x.legende=t.value; await DB.put('media',x); };
+  g.onclick = e => {
+    const tile = e.target.closest('.tile'); if(!tile) return; const x = S.media.find(m=>m.id===tile.dataset.id);
+    if(e.target.closest('[data-view]')){ const v=$('#viewer'); $('img',v).src=x.data; v.hidden=false; }
+    if(e.target.closest('[data-annot]')){ loadSheet(x); $('#drawSec').scrollIntoView({behavior:'smooth'}); }
+    if(e.target.closest('[data-open]')) openFile(x);
+    const d = e.target.closest('[data-del]');
+    if(d) armed(d, 'Confirmer', async () => {
+      await DB.del('media', x.id); S.media = S.media.filter(m=>m.id!==x.id);
+      if(E.m===x){ E.dirty=false; loadSheet(firstSheet()); }
+      renderGallery(); renderStrip(); storeInfo();
+    });
+  };
+}
+$('#viewer').onclick = e => { if(e.target.tagName!=='IMG') $('#viewer').hidden=true; };
+function setupFiles(){
+  const onFiles = async files => { for(const f of files) await addFile(f); renderGallery(); storeInfo(); };
+  $('#camIn').onchange = e => { onFiles([...e.target.files]); e.target.value=''; };
+  $('#fileIn').onchange = e => { onFiles([...e.target.files]); e.target.value=''; };
+  const d = $('#drop');
+  d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
+  d.ondragleave = () => d.classList.remove('over');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); onFiles([...e.dataTransfer.files]); };
+}
+const readURL = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); });
+async function shrink(file, max=1800){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+    const k = Math.min(1, max/Math.max(img.naturalWidth,img.naturalHeight));
+    const cv = document.createElement('canvas'); cv.width=Math.round(img.naturalWidth*k); cv.height=Math.round(img.naturalHeight*k);
+    cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    return {data:cv.toDataURL('image/jpeg',0.82), w:cv.width, h:cv.height};
+  } finally { URL.revokeObjectURL(url); }
+}
+async function addFile(file){
+  const base = {id:uid(), chantierId:S.cur.id, legende:'', created:Date.now()};
+  if(file.type.startsWith('image/') && !/svg/.test(file.type)){
+    try{ const r = await shrink(file); const m = {...base, kind:'photo', base:r.data, data:r.data, w:r.w, h:r.h, ops:[]};
+      await DB.put('media', m); S.media.push(m); touch(); toast('Photo ajoutée'); return; }catch{}
+  }
+  if(file.size > 40*1048576){ toast(`« ${file.name} » dépasse 40 Mo`); return; }
+  try{
+    const m = {...base, kind:'fichier', name:file.name, mime:file.type||'application/octet-stream', size:file.size, data:await readURL(file)};
+    await DB.put('media', m); S.media.push(m); touch(); toast('Fichier ajouté');
+  }catch{ toast(`Impossible de lire « ${file.name} »`); }
+}
+function dataToBlob(d){ const i=d.indexOf(','); const mime=(d.slice(0,i).match(/data:([^;]+)/)||[])[1]||'application/octet-stream'; const bin=atob(d.slice(i+1)); const u=new Uint8Array(bin.length); for(let j=0;j<bin.length;j++) u[j]=bin.charCodeAt(j); return new Blob([u],{type:mime}); }
+function openFile(x){
+  const url = URL.createObjectURL(dataToBlob(x.data));
+  const a = document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener';
+  if(!/^(image\/|application\/pdf|text\/)/.test(x.mime)) a.download = x.name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  if(inFrame) toast('L’ouverture des fichiers marche dans l’appli installée');
+}
+
+/* ---------- Zone de dessin et d'annotation ---------- */
+const COLORS = ['#c62828','#1d5ca8','#f2b705','#1a2226','#ffffff'];
+const E = {m:null, ops:[], undo:[], redo:[], tool:'pen', color:'#1a2226', w:6, pencilOnly:false, cur:null, base:null, layer:null, dirty:false, t:null, sel:null, guide:null};
+try{ E.pencilOnly = localStorage.getItem('rc-pencil')==='1'; }catch{}
+const ic = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+function drawHTML(){
+  return `
+  <div class="card-h"><h3>Dessin &amp; annotations</h3><span class="eyebrow" id="drawWhat"></span></div>
+  <div class="tb" role="toolbar" aria-label="Outils de dessin">
+    <div class="grp" id="tools">
+      <button class="tool" type="button" data-tool="edit" title="Sélectionner, déplacer, modifier">${ic('<path d="M5 3l13 7-6 1.5L9.5 18z"/>')}<span>Modifier</span></button>
+      <button class="tool" type="button" data-tool="pen" title="Stylo" aria-label="Stylo">${ic('<path d="M4 20l4-1 11-11-3-3L5 16z"/>')}<span>Stylo</span></button>
+      <button class="tool" type="button" data-tool="line" title="Trait" aria-label="Trait">${ic('<path d="M4 20L20 4"/>')}<span>Trait</span></button>
+      <button class="tool" type="button" data-tool="cote" title="Cote" aria-label="Cote">${ic('<path d="M3 12h18M3 7v10M21 7v10"/>')}<span>Cote</span></button>
+      <button class="tool" type="button" data-tool="arrow" title="Flèche" aria-label="Flèche">${ic('<path d="M4 20L19 5M11 5h8v8"/>')}<span>Flèche</span></button>
+      <button class="tool" type="button" data-tool="text" title="Texte" aria-label="Texte">${ic('<path d="M5 6h14M12 6v13"/>')}<span>Texte</span></button>
+      <button class="tool" type="button" data-tool="erase" title="Gomme" aria-label="Gomme">${ic('<path d="M8 20h12M4 15l9-9 6 6-8 8H8z"/>')}<span>Gomme</span></button>
+    </div>
+    <div class="grp" id="colors">${COLORS.map(c=>`<button class="sw" type="button" data-c="${c}" style="background:${c}" aria-label="Couleur"></button>`).join('')}</div>
+    <div class="grp"><div class="seg" id="widths"><button type="button" data-w="3">Fin</button><button type="button" data-w="6">Moyen</button><button type="button" data-w="11">Épais</button></div></div>
+    <div class="grp">
+      <button class="tool" type="button" id="pencilOnly" title="Seul l'Apple Pencil dessine, la main peut se poser sur l'écran"><span>Pencil seul</span></button>
+      <button class="tool" type="button" id="edUndo" aria-label="Annuler">${ic('<path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3"/>')}</button>
+      <button class="tool" type="button" id="edRedo" aria-label="Rétablir">${ic('<path d="M15 14l5-5-5-5M20 9H10a6 6 0 000 12h3"/>')}</button>
+    </div>
+    <div class="grp zoom" aria-label="Zoom">
+      <button class="tool" type="button" id="zOut" aria-label="Dézoomer">−</button>
+      <button class="tool" type="button" id="zReset" title="Revenir à la feuille entière">100 %</button>
+      <button class="tool" type="button" id="zIn" aria-label="Zoomer">+</button>
+    </div>
+    <div class="grp">
+      <button class="tool" type="button" id="edFull" title="Plein écran / Réduire">${ic('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>')}<span id="edFullLbl">Plein écran</span></button>
+    </div>
+  </div>
+  <div class="sheetbar">
+    <input id="edTitle" placeholder="Titre de la feuille" aria-label="Titre de la feuille">
+    <button class="btn sm" type="button" id="edClear">Tout effacer</button>
+    <button class="btn sm danger" type="button" id="edDel">Supprimer la feuille</button>
+  </div>
+  <div class="cwrap" id="cwrap"><div class="cstage" id="cstage"><canvas id="cv" width="1600" height="1150"></canvas></div>
+    <div class="selbar" id="selbar" hidden>
+      <button class="btn sm" type="button" data-sa="value">Valeur de la cote</button>
+      <button class="btn sm danger" type="button" data-sa="del">Supprimer</button>
+      <button class="btn sm primary" type="button" data-sa="ok">OK</button>
+    </div>
+    <form class="bubble" id="bubble" hidden>
+      <span class="padlbl" id="padLbl" hidden>Valeur de la cote</span>
+      <input id="bubbleIn" autocomplete="off" placeholder="ex. 2450">
+      <div class="pad" id="pad" hidden>
+        ${['7','8','9','4','5','6','1','2','3',',','0'].map(k=>`<button type="button" data-k="${k}">${k}</button>`).join('')}
+        <button type="button" class="del" data-k="del" aria-label="Effacer">⌫</button>
+      </div>
+      <div class="units" id="units" hidden role="group" aria-label="Unité">
+        <button type="button" data-u="mm">mm</button><button type="button" data-u="cm">cm</button><button type="button" data-u="m">m</button><button type="button" data-u="">sans</button>
+      </div>
+      <button class="btn primary" type="submit">OK</button><button class="btn" type="button" id="bubbleCancel">Annuler</button>
+    </form>
+  </div>
+  <div class="strip" id="strip"></div>`;
+}
+const sheets = () => S.media.filter(x=>x.kind==='croquis');
+const blankSheet = () => ({kind:'croquis', legende:'Croquis '+(sheets().length+1), ops:[], w:1600, h:1150});
+const firstSheet = () => sheets()[0] || blankSheet();
+function mountDrawing(){
+  const sec = $('#drawSec');
+  $('#tools').onclick = e => { const b=e.target.closest('[data-tool]'); if(b){ E.tool=b.dataset.tool; if(E.tool==='cote' && E.color==='#1a2226') E.color='#c62828'; syncTb(); setSel(null); } };
+  $('#selbar').onclick = e => {
+    const b=e.target.closest('[data-sa]'); if(!b || E.sel==null) return; const i=E.sel, o=E.ops[i];
+    if(b.dataset.sa==='ok') setSel(null);
+    if(b.dataset.sa==='del'){ setSel(null); pushOps(withoutOp(E.ops, i)); }
+    if(b.dataset.sa==='value') askText('Valeur de la cote', txt => { const n=E.ops.slice(); n[i]={...o, txt}; pushOps(n); positionSelbar(); }, null, o.txt||'', true);
+  };
+  $('#colors').onclick = e => { const b=e.target.closest('[data-c]'); if(b){ E.color=b.dataset.c; syncTb(); } };
+  $('#widths').onclick = e => { const b=e.target.closest('[data-w]'); if(b){ E.w=+b.dataset.w; syncTb(); } };
+  $('#pencilOnly').onclick = () => { E.pencilOnly=!E.pencilOnly; try{localStorage.setItem('rc-pencil',E.pencilOnly?'1':'0')}catch{}; syncTb(); toast(E.pencilOnly?'Seul l’Apple Pencil dessine':'Doigt et Pencil dessinent'); };
+  $('#edUndo').onclick = () => { setSel(null); if(!E.undo.length) return; E.redo.push(E.ops); E.ops=E.undo.pop(); changed(); };
+  $('#edRedo').onclick = () => { setSel(null); if(!E.redo.length) return; E.undo.push(E.ops); E.ops=E.redo.pop(); changed(); };
+  $('#edClear').onclick = () => { setSel(null); if(E.ops.length) pushOps([]); };
+  $('#edFull').onclick = () => { const on = sec.classList.toggle('full'); $('#edFullLbl').textContent = on ? 'Réduire' : 'Plein écran'; document.body.style.overflow = on ? 'hidden' : ''; E.view.center=true; E.view.z=1; fit(); paint(); };
+  $('#zIn').onclick = () => zoomAt(1.5); $('#zOut').onclick = () => zoomAt(1/1.5); $('#zReset').onclick = () => centerView(1);
+  $('#edTitle').oninput = e => { if(!E.m) return; E.m.legende = e.target.value; E.dirty=true; scheduleSave(); };
+  $('#edDel').onclick = e => armed(e.currentTarget, 'Confirmer', async () => {
+    if(E.m.kind==='photo'){ pushOps([]); toast('Annotations retirées'); return; }
+    if(E.m.id){ await DB.del('media', E.m.id); S.media = S.media.filter(x=>x.id!==E.m.id); }
+    E.dirty=false; loadSheet(firstSheet()); toast('Feuille supprimée');
+  });
+  $('#pad').onclick = e => { const b=e.target.closest('[data-k]'); if(!b) return; padKey(b.dataset.k); };
+  $('#units').onclick = e => { const b=e.target.closest('[data-u]'); if(!b) return; padUnit=b.dataset.u; try{localStorage.setItem('rc-unit',padUnit)}catch{}; syncUnits(); };
+  $('#bubble').onsubmit = ev => { ev.preventDefault(); let v=$('#bubbleIn').value.trim();
+    if(padOn){ v = v.replace(/[,.]$/,''); if(v && padUnit) v += ' '+padUnit; padOn=false; } $('#bubble').hidden=true; if(v) bubbleOk?.(v); else bubbleNo?.(); };
+  $('#bubbleCancel').onclick = () => { $('#bubble').hidden=true; padOn=false; bubbleNo?.(); };
+  $('#strip').onclick = e => {
+    const b = e.target.closest('button'); if(!b) return;
+    if(b.dataset.add!==undefined){ loadSheet(blankSheet()); return; }
+    const m = S.media.find(x=>x.id===b.dataset.id); if(m) loadSheet(m);
+  };
+  bindCanvas($('#cv'));
+  const keep = E.m && E.m.chantierId===S.cur.id && (S.media.includes(E.m) || !E.m.id);
+  E.m = keep ? E.m : null;
+  loadSheet(keep ? E.m : firstSheet(), true);
+}
+function syncTb(){
+  $$('#tools .tool').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tool===E.tool));
+  $$('#colors .sw').forEach(b=>b.setAttribute('aria-pressed', b.dataset.c===E.color));
+  $$('#widths button').forEach(b=>b.setAttribute('aria-pressed', +b.dataset.w===E.w));
+  $('#pencilOnly')?.setAttribute('aria-pressed', E.pencilOnly);
+}
+function loadSheet(m, remount){
+  if(E.m && E.m!==m && E.dirty) saveSheet();
+  if(E.m!==m || remount){ E.ops = (m.ops||[]).slice(); E.undo=[]; E.redo=[]; }
+  E.m = m; m.chantierId ??= S.cur.id; E.cur=null; E.dirty=false; E.sel=null; E.guide=null; E.match=null; if($('#selbar')) $('#selbar').hidden=true;
+  const cv = $('#cv'); if(!cv) return;
+  cv.width = m.w || 1600; cv.height = m.h || 1150;
+  $('#edTitle').value = m.legende || '';
+  $('#drawWhat').textContent = m.kind==='photo' ? 'Annotation d’une photo' : 'Croquis';
+  $('#edDel').textContent = m.kind==='photo' ? 'Retirer les annotations' : 'Supprimer la feuille';
+  if(m.kind==='photo' && E.tool==='pen') E.tool='cote';
+  syncTb(); renderStrip();
+  const go = () => { fit(); commit(); };
+  E.view = {z:1, x:0, y:0, center:true};
+  if(m.kind==='photo'){ E.base=new Image(); E.base.onload=go; E.base.src=m.base; } else { E.base=null; go(); }
+}
+function renderStrip(){
+  const s=$('#strip'); if(!s) return;
+  const extra = E.m && (E.m.kind==='photo' || !E.m.id) ? [E.m] : [];
+  s.innerHTML = [...sheets(), ...extra].map(x=>`<button type="button" data-id="${x.id||''}" aria-current="${x===E.m}">
+      <img src="${x.data||blankThumb()}" alt=""><span>${x.kind==='photo'?'Photo · ':''}${esc(x.legende||(x.kind==='photo'?'sans légende':'Croquis'))}</span></button>`).join('')
+    + `<button type="button" class="add" data-add>+ Nouvelle feuille</button>`;
+}
+let _blank; function blankThumb(){ if(_blank) return _blank; const c=document.createElement('canvas'); c.width=160; c.height=115; background(c.getContext('2d'),160,115,null,4); return _blank=c.toDataURL(); }
+/* Taille d'affichage : la feuille prend toute la largeur disponible (et tout l'écran en plein écran) */
+function fit(){
+  const cv=$('#cv'), sec=$('#drawSec'), stage=$('#cstage'), wr=$('#cwrap'); if(!cv || !stage) return;
+  const full = sec.classList.contains('full');
+  const W = wr.clientWidth;
+  // En page normale : cadre plus haut, mais au plus 25 % de la largeur de la feuille hors du cadre
+  const H = full ? wr.clientHeight : Math.max(320, Math.min(window.innerHeight - 130, W / (0.75 * cv.width/cv.height)));
+  if(full) growSheet(W, H);
+  // Le cadre prend toute la place ; la feuille le remplit (ses bords peuvent dépasser : 2 doigts ou « − » pour les voir)
+  const k = Math.max(W/cv.width, H/cv.height);
+  const w = Math.round(cv.width*k), h = Math.round(cv.height*k);
+  stage.style.width = W+'px'; stage.style.height = H+'px';
+  cv.style.width = w+'px'; cv.style.height = h+'px';
+  E.fit = {w, h, zMin: Math.min(1, W/w, H/h)};
+  if(E.view.center) centerView(E.view.z); else setView(E.view.z, E.view.x, E.view.y);
+}
+function centerView(z){
+  const stage=$('#cstage'); if(!stage || !E.fit) return;
+  z = Math.min(5, Math.max(E.fit.zMin, z));
+  setView(z, (stage.clientWidth - E.fit.w*z)/2, (stage.clientHeight - E.fit.h*z)/2);
+}
+/* En plein écran, un croquis s'agrandit aux proportions de l'écran : plus de bandes vides.
+   La feuille ne fait que s'agrandir (rien n'est coupé) et le dessin reste centré. */
+function growSheet(W, H){
+  const m=E.m, cv=$('#cv');
+  if(!m || m.kind!=='croquis' || SYNC.role==='viewer' || W<50 || H<50) return;
+  const w=cv.width, h=cv.height, ratio=W/H;
+  let nw=w, nh=h;
+  if(ratio > w/h*1.02) nw = Math.round(h*ratio); else if(ratio < w/h/1.02) nh = Math.round(w/ratio);
+  if(nw===w && nh===h) return;
+  m.k = m.k ?? kOf(w,h);
+  const dx=(nw-w)/2, dy=(nh-h)/2;
+  const mv = q => [q[0]+dx, q[1]+dy, ...q.slice(2)];
+  const shift = ops => ops.map(o => o.pts ? {...o, pts:o.pts.map(mv)} : o.a ? {...o, a:mv(o.a), b:mv(o.b)} : o.at ? {...o, at:mv(o.at)} : o);
+  E.ops = shift(E.ops); E.undo = E.undo.map(shift); E.redo = E.redo.map(shift);
+  m.w = cv.width = nw; m.h = cv.height = nh;
+  commit();
+  if(E.ops.length || m.id){ E.dirty = true; scheduleSave(); }
+}
+/* Zoom et déplacement de la feuille (2 doigts, boutons, ou pincement du trackpad) */
+E.view = {z:1, x:0, y:0, center:true};
+function setView(z, x, y){
+  const stage=$('#cstage'), cv=$('#cv'); if(!stage || !E.fit) return;
+  const w=stage.clientWidth, h=stage.clientHeight;
+  z = Math.min(5, Math.max(E.fit.zMin, z));
+  const cw=E.fit.w*z, ch=E.fit.h*z;
+  x = cw<=w ? (w-cw)/2 : Math.min(0, Math.max(w - cw, x));
+  y = ch<=h ? (h-ch)/2 : Math.min(0, Math.max(h - ch, y));
+  E.view = {z, x, y};
+  cv.style.transform = `translate(${x}px,${y}px) scale(${z})`;
+  const r=$('#zReset'); if(r) r.textContent = Math.round(z*100)+' %';
+  positionSelbar();
+}
+function zoomAt(f, cx, cy){
+  const stage=$('#cstage'); if(!stage) return;
+  const r = stage.getBoundingClientRect();
+  const px = (cx ?? r.left + r.width/2) - r.left, py = (cy ?? r.top + r.height/2) - r.top;
+  const {z,x,y} = E.view, nz = Math.min(5, Math.max(E.fit?.zMin ?? 1, z*f));
+  setView(nz, px - (px - x)*nz/z, py - (py - y)*nz/z);
+}
+window.addEventListener('resize', () => { fit(); positionSelbar(); });
+
+function background(c, W, H, base, step=40){
+  c.fillStyle='#fff'; c.fillRect(0,0,W,H);
+  if(base){ c.drawImage(base,0,0,W,H); return; }
+  c.lineWidth=1;
+  for(const [st,col] of [[step,'#e3e9ee'],[step*5,'#cdd6dd']]){
+    c.strokeStyle=col;
+    for(let x=0;x<=W;x+=st){ c.beginPath(); c.moveTo(x+.5,0); c.lineTo(x+.5,H); c.stroke(); }
+    for(let y=0;y<=H;y+=st){ c.beginPath(); c.moveTo(0,y+.5); c.lineTo(W,y+.5); c.stroke(); }
+  }
+}
+function label(c, txt, x, y, color, sz){
+  c.font = `600 ${sz}px "IBM Plex Mono", Menlo, monospace`; c.textAlign='center'; c.textBaseline='middle';
+  c.lineJoin='round'; c.lineWidth=sz/4; c.strokeStyle = color.toLowerCase()==='#ffffff' ? '#1a2226' : '#ffffff';
+  c.strokeText(txt,x,y); c.fillStyle=color; c.fillText(txt,x,y);
+}
+function drawOp(c, o, k){
+  if(o.orphan) return;
+  c.save(); c.strokeStyle=o.c; c.fillStyle=o.c; c.lineCap='round'; c.lineJoin='round';
+  const w = o.w*k;
+  if(o.t==='pen'){
+    const p=o.pts; if(p.length===1){ c.beginPath(); c.arc(p[0][0],p[0][1],w/2,0,7); c.fill(); }
+    for(let i=1;i<p.length;i++){ c.lineWidth = w*(0.55+0.9*(p[i][2]??0.5)); c.beginPath(); c.moveTo(p[i-1][0],p[i-1][1]); c.lineTo(p[i][0],p[i][1]); c.stroke(); }
+  } else if(o.a){
+    const [ax,ay]=o.a, [bx,by]=o.b, ang=Math.atan2(by-ay,bx-ax), nx=-Math.sin(ang), ny=Math.cos(ang);
+    c.lineWidth=w; c.beginPath(); c.moveTo(ax,ay); c.lineTo(bx,by); c.stroke();
+    if(o.t==='arrow'){ const L=w*4+14*k; c.beginPath(); c.moveTo(bx,by); c.lineTo(bx-L*Math.cos(ang-0.45),by-L*Math.sin(ang-0.45)); c.lineTo(bx-L*Math.cos(ang+0.45),by-L*Math.sin(ang+0.45)); c.closePath(); c.fill(); }
+    if(o.t==='cote'){
+      const T=12*k+w*2;
+      [[ax,ay],[bx,by]].forEach(([x,y])=>{ c.beginPath(); c.moveTo(x-nx*T,y-ny*T); c.lineTo(x+nx*T,y+ny*T); c.stroke();
+        c.beginPath(); c.moveTo(x-Math.cos(ang+0.8)*T*0.7,y-Math.sin(ang+0.8)*T*0.7); c.lineTo(x+Math.cos(ang+0.8)*T*0.7,y+Math.sin(ang+0.8)*T*0.7); c.stroke(); });
+      if(o.txt){ const sz=Math.round(34*k); c.font=`600 ${sz}px "IBM Plex Mono", Menlo, monospace`;
+        const tw=c.measureText(o.txt).width, sd=o.side??-1, off=sz*0.8 + Math.abs(nx)*tw/2;
+        label(c, o.txt, (ax+bx)/2+sd*nx*off, (ay+by)/2+sd*ny*off, o.c, sz); }
+    }
+  } else if(o.t==='text'){
+    label(c, o.txt, o.at[0], o.at[1], o.c, Math.round((o.size||38)*k));
+  }
+  c.restore();
+}
+const kOf = (W,H) => Math.max(W,H)/1600;
+/* Une cote posée sur un trait suit ce trait (déplacement, allongement) */
+function resolveCotes(ops, k){
+  const byId = {}; ops.forEach(o=>{ if(o.id) byId[o.id]=o; });
+  ops.forEach(o=>{
+    if(o.t!=='cote' || !o.ref) return;
+    const l = byId[o.ref]; o.orphan = !l; if(!l) return;
+    const ang=Math.atan2(l.b[1]-l.a[1], l.b[0]-l.a[0]), nx=-Math.sin(ang), ny=Math.cos(ang), d=o.side*(o.off||70)*k;
+    o.a=[l.a[0]+nx*d, l.a[1]+ny*d]; o.b=[l.b[0]+nx*d, l.b[1]+ny*d];
+  });
+}
+function withoutOp(ops, i){ const id=ops[i]?.id; return ops.filter((o,j)=> j!==i && !(id && o.ref===id)); }
+function render(c, W, H, base, ops, k=kOf(W,H)){ resolveCotes(ops, k); background(c,W,H,base); ops.forEach(o=>drawOp(c,o,k)); }
+/* Échelle des traits et textes de la feuille ouverte (fixe même si la feuille a été agrandie) */
+const curK = () => E.m?.k ?? kOf($('#cv').width, $('#cv').height);
+function commit(){
+  const cv=$('#cv'); if(!cv) return;
+  E.layer ??= document.createElement('canvas'); E.layer.width=cv.width; E.layer.height=cv.height;
+  render(E.layer.getContext('2d'), cv.width, cv.height, E.base, E.ops, curK()); paint();
+}
+function paint(){ const cv=$('#cv'); if(!cv || !E.layer) return; resolveCotes(E.ops, curK()); const x=cv.getContext('2d'); x.clearRect(0,0,cv.width,cv.height); x.drawImage(E.layer,0,0); if(E.cur) drawOp(x,E.cur,curK()); overlay(x, cv); }
+/* Repères d'édition (jamais enregistrés dans l'image) */
+const LINE_TOOLS = ['line','cote','arrow'];
+const scrScale = cv => { const w=cv.getBoundingClientRect().width; return w ? cv.width/w : 1; };
+function bbox(o, k){
+  if(o.a) return [Math.min(o.a[0],o.b[0]),Math.min(o.a[1],o.b[1]),Math.max(o.a[0],o.b[0]),Math.max(o.a[1],o.b[1])];
+  if(o.pts){ const xs=o.pts.map(p=>p[0]), ys=o.pts.map(p=>p[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]; }
+  const sz=(o.size||38)*k, hw=o.txt.length*sz*0.33; return [o.at[0]-hw,o.at[1]-sz*0.7,o.at[0]+hw,o.at[1]+sz*0.7];
+}
+function overlay(x, cv){
+  const s=scrScale(cv), k=curK();
+  const dot = (p, r, fill) => { x.beginPath(); x.arc(p[0],p[1],r,0,7); x.fillStyle=fill; x.fill(); x.lineWidth=2*s; x.strokeStyle='#1d5ca8'; x.stroke(); };
+  if(E.guide){ x.save(); x.setLineDash([8*s,6*s]); x.lineWidth=1.5*s; x.strokeStyle='#1d5ca8';
+    const g=E.guide; if(g.a[1]===g.b[1]){ x.beginPath(); x.moveTo(0,g.a[1]); x.lineTo(cv.width,g.a[1]); x.stroke(); } else { x.beginPath(); x.moveTo(g.a[0],0); x.lineTo(g.a[0],cv.height); x.stroke(); } x.restore(); }
+  if(E.match && E.ops[E.match.i]){
+    const tag = (A, B) => {       // trait surligné + double barre « = » au milieu (longueurs égales)
+      x.save(); x.lineCap='round';
+      x.strokeStyle='rgba(29,92,168,.28)'; x.lineWidth=14*s; x.beginPath(); x.moveTo(A[0],A[1]); x.lineTo(B[0],B[1]); x.stroke();
+      const ang=Math.atan2(B[1]-A[1], B[0]-A[0]), ux=Math.cos(ang), uy=Math.sin(ang), nx=-uy, ny=ux;
+      const mx=(A[0]+B[0])/2, my=(A[1]+B[1])/2, h=10*s, g=4*s;
+      x.strokeStyle='#1d5ca8'; x.lineWidth=2.5*s; x.beginPath();
+      for(const o of [-g, g]){ x.moveTo(mx+ux*o-nx*h, my+uy*o-ny*h); x.lineTo(mx+ux*o+nx*h, my+uy*o+ny*h); }
+      x.stroke(); x.restore();
+    };
+    const m = E.ops[E.match.i]; tag(m.a, m.b); tag(E.match.seg[0], E.match.seg[1]);
+  }
+  if(['line','arrow','edit'].includes(E.tool)) E.ops.forEach((o,i)=>{ if(o.a && i!==E.sel && !o.ref){ dot(o.a,5*s,'#ffffff'); dot(o.b,5*s,'#ffffff'); } });
+  if(E.cur?.a && E.cur.t!=='cote'){ dot(E.cur.a,5*s,'#1d5ca8'); }
+  const o = E.sel!=null && E.ops[E.sel];
+  if(!o) return;
+  if(o.a){
+    dot(o.a,11*s,'#ffffff'); dot(o.b,11*s,'#ffffff');
+    const m=[(o.a[0]+o.b[0])/2,(o.a[1]+o.b[1])/2]; dot(m,13*s,'#1d5ca8');
+    x.save(); x.strokeStyle='#ffffff'; x.lineWidth=2*s; x.beginPath(); x.moveTo(m[0]-7*s,m[1]); x.lineTo(m[0]+7*s,m[1]); x.moveTo(m[0],m[1]-7*s); x.lineTo(m[0],m[1]+7*s); x.stroke(); x.restore();
+  } else {
+    const [x0,y0,x1,y1]=bbox(o,k), pad=10*s; x.save(); x.setLineDash([6*s,5*s]); x.lineWidth=2*s; x.strokeStyle='#1d5ca8'; x.strokeRect(x0-pad,y0-pad,x1-x0+2*pad,y1-y0+2*pad); x.restore();
+  }
+}
+function setSel(i){ E.sel = (i==null || i<0) ? null : i; paint(); positionSelbar(); }
+function positionSelbar(){
+  const bar=$('#selbar'), cv=$('#cv'); if(!bar || !cv) return;
+  const o = E.sel!=null && E.ops[E.sel];
+  if(!o){ bar.hidden=true; return; }
+  const s=scrScale(cv), [x0,y0,x1]=bbox(o,curK());
+  bar.querySelector('[data-sa="value"]').hidden = o.t!=='cote';
+  bar.hidden=false;
+  const wrap=$('#cwrap'), half=bar.offsetWidth/2, cr=cv.getBoundingClientRect(), wrr=wrap.getBoundingClientRect();
+  let left = cr.left - wrr.left + ((x0+x1)/2)/s, top = cr.top - wrr.top + y0/s - 10;
+  left = Math.max(half+4, Math.min(wrap.clientWidth-half-4, left));
+  bar.style.left = left+'px'; bar.style.top = Math.max(bar.offsetHeight+18, top)+'px';
+}
+function changed(){ commit(); E.dirty=true; scheduleSave(); }
+function pushOps(next){ E.undo.push(E.ops); E.redo=[]; E.ops=next; changed(); }
+function scheduleSave(){ clearTimeout(E.t); E.t=setTimeout(saveSheet, 900); }
+async function saveSheet(){
+  clearTimeout(E.t); const m=E.m; if(!m || !E.dirty || SYNC.role==='viewer') return; E.dirty=false;
+  const ops = E.ops;
+  if(!m.id && !ops.length) return;
+  const W=m.w||1600, H=m.h||1150, out=document.createElement('canvas'); out.width=W; out.height=H;
+  render(out.getContext('2d'), W, H, m.kind==='photo'?E.base:null, ops, m.k ?? kOf(W,H));
+  m.data = out.toDataURL('image/jpeg', 0.86); m.ops = ops; m.w=W; m.h=H;
+  if(!m.id){ m.id=uid(); m.created=Date.now(); S.media.push(m); }
+  await DB.put('media', m);
+  if(S.cur && m.chantierId===S.cur.id){ touch(); renderStrip(); if(m.kind==='photo') renderGallery(); }
+}
+async function flushDrawing(discard){ if(discard){ E.dirty=false; clearTimeout(E.t); } else await saveSheet(); }
+
+function bindCanvas(cv){
+  const pt = e => { const r=cv.getBoundingClientRect(); return [ (e.clientX-r.left)*cv.width/r.width, (e.clientY-r.top)*cv.height/r.height ]; };
+  const R = () => 22*scrScale(cv);
+  const dist = (p,q) => Math.hypot(p[0]-q[0], p[1]-q[1]);
+  const distSeg = (p,a,b) => { const dx=b[0]-a[0], dy=b[1]-a[1], L=dx*dx+dy*dy; let t=L?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(p[0]-a[0]-t*dx, p[1]-a[1]-t*dy); };
+  const hit = p => {
+    const k=curK(), r=R();
+    for(let i=E.ops.length-1;i>=0;i--){
+      const o=E.ops[i];
+      if(o.t==='pen' && o.pts.some((q,j)=> j? distSeg(p,o.pts[j-1],q)<r : dist(p,q)<r)) return i;
+      if(o.a && distSeg(p,o.a,o.b)<r) return i;
+      if(o.t==='text'){ const [x0,y0,x1,y1]=bbox(o,k); if(p[0]>x0-r&&p[0]<x1+r&&p[1]>y0-r&&p[1]<y1+r) return i; }
+    }
+    return -1;
+  };
+  /* Sommets des traits (extrémités) */
+  const vertices = excl => { const v=[]; E.ops.forEach((o,i)=>{ if(o.a) ['a','b'].forEach(end=>{ if(!excl?.has(i+end)) v.push({i,end,pt:o[end]}); }); }); return v; };
+  const nearVertex = (p, excl) => {
+    let best=null, bd=R();
+    for(const v of vertices(excl)){ const d=dist(p,v.pt); if(d<bd){ bd=d; best=v; } }
+    return best && {pt:best.pt.slice(), owners: vertices(excl).filter(v=>dist(v.pt,best.pt)<0.5)};
+  };
+  /* Aimants : d'abord les sommets existants, puis horizontal / vertical à moins de 5°, sinon libre */
+  /* Aimants, par ordre de priorité :
+     1. sommet d'un trait existant (refermer une forme)
+     2. horizontal / vertical à moins de 5°
+     3. même longueur qu'un trait existant (ex. trait 3 = trait 1) */
+  const snapEnd = (a, p, excl) => {
+    E.guide = null; E.match = null;
+    const v = nearVertex(p, excl); if(v) return v.pt;
+    if(!a) return p;
+    let q = p;
+    const dx=p[0]-a[0], dy=p[1]-a[1];
+    if(Math.hypot(dx,dy)>0){
+      const ang=Math.atan2(dy,dx)*180/Math.PI, near=Math.round(ang/90)*90;
+      if(Math.abs(ang-near)<5){ q = (near%180===0) ? [p[0], a[1]] : [a[0], p[1]]; E.guide={a:a.slice(), b:q}; }
+    }
+    const L = Math.hypot(q[0]-a[0], q[1]-a[1]); if(L < 1) return q;
+    const skip = new Set([...(excl||[])].map(k => +String(k).slice(0,-1)));
+    const tol = Math.max(14*scrScale(cv), L*0.03);
+    let best=null, bd=tol;
+    E.ops.forEach((o,i) => {
+      if(o.t!=='line' || skip.has(i)) return;
+      const Li = Math.hypot(o.b[0]-o.a[0], o.b[1]-o.a[1]), d = Math.abs(Li-L);
+      if(Li > 1 && d < bd){ bd=d; best={i, Li}; }
+    });
+    if(best){
+      const k = best.Li / L;
+      q = [a[0]+(q[0]-a[0])*k, a[1]+(q[1]-a[1])*k];
+      if(E.guide) E.guide.b = q;
+      E.match = {i:best.i, seg:[a.slice(), q.slice()]};
+    }
+    return q;
+  };
+  const tr = (o,[dx,dy]) => { const m=q=>[q[0]+dx,q[1]+dy,...q.slice(2)];
+    if(o.pts) return {...o, pts:o.pts.map(m)}; if(o.a) return {...o, a:m(o.a), b:m(o.b)}; if(o.at) return {...o, at:m(o.at)}; return o; };
+
+  /* Outil Cote : toucher un trait ouvre le pavé, la cote se place à l'extérieur du dessin */
+  const coteTap = p => {
+    let i=-1, bd=R()*1.4;     // trait ou cote le plus proche du doigt
+    E.ops.forEach((x,j)=>{ if(!x.a || x.orphan) return; const d=distSeg(p,x.a,x.b) + (x.t==='cote'?4:0); if(d<bd){ bd=d; i=j; } });
+    if(i<0){ toast('Touchez un trait pour le coter'); return; }
+    const o = E.ops[i];
+    if(o.t==='cote'){ askText('Valeur de la cote', txt => { const n=E.ops.slice(); n[i]={...o, txt}; pushOps(n); }, null, o.txt||'', true); return; }
+    if(o.t!=='line' && o.t!=='arrow') return;
+    const existing = o.id && E.ops.findIndex(c=>c.t==='cote' && c.ref===o.id);
+    if(existing>=0){ const c=E.ops[existing]; askText('Valeur de la cote', txt => { const n=E.ops.slice(); n[existing]={...c, txt}; pushOps(n); }, null, c.txt||'', true); return; }
+    // côté extérieur : à l'opposé du centre du dessin
+    const pts = E.ops.filter(x=>x.a && x.t!=='cote').flatMap(x=>[x.a,x.b]);
+    const cx = pts.reduce((a,q)=>a+q[0],0)/pts.length, cy = pts.reduce((a,q)=>a+q[1],0)/pts.length;
+    const ang=Math.atan2(o.b[1]-o.a[1], o.b[0]-o.a[0]), nx=-Math.sin(ang), ny=Math.cos(ang);
+    const mx=(o.a[0]+o.b[0])/2, my=(o.a[1]+o.b[1])/2;
+    const dot = (mx-cx)*nx + (my-cy)*ny;
+    const side = Math.abs(dot) < 1 ? -1 : Math.sign(dot);
+    const id = o.id || uid();
+    const preview = {t:'cote', c:E.color, w:3, ref:id, side, off:70, a:o.a, b:o.b};
+    E.cur = {...preview}; { const k=curK(), d=side*70*k; E.cur.a=[o.a[0]+nx*d,o.a[1]+ny*d]; E.cur.b=[o.b[0]+nx*d,o.b[1]+ny*d]; }
+    paint();
+    askText('Valeur de la cote', txt => {
+      E.cur=null; const n=E.ops.slice(); if(!o.id) n[i]={...o, id};
+      pushOps([...n, {...preview, txt}]);
+    }, () => { E.cur=null; paint(); }, '', true);
+  };
+  let active=null, st=null;
+  /* Gestes : 2 doigts = zoom + déplacement ; en « Pencil seul », 1 doigt déplace la feuille zoomée */
+  const G = {pts:new Map(), on:false, lock:false, s:null};
+  const centroid = () => { const a=[...G.pts.values()]; return [a.reduce((t,p)=>t+p[0],0)/a.length, a.reduce((t,p)=>t+p[1],0)/a.length]; };
+  const spread = () => { const a=[...G.pts.values()]; return a.length<2 ? 0 : Math.hypot(a[0][0]-a[1][0], a[0][1]-a[1][1]); };
+  const gBegin = () => {
+    if(st){ if(st.mode!=='draw') E.ops = st.base; E.cur=null; st=null; active=null; E.guide=null; E.match=null; commit(); }
+    G.on=true; G.lock=true; G.s={c:centroid(), d:spread(), v:{...E.view}};
+  };
+  cv.addEventListener('pointerdown', e => {
+    if(e.pointerType!=='touch') return;
+    G.pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if(G.pts.size>=2 || (E.pencilOnly && G.pts.size===1)){ e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch{} gBegin(); }
+  });
+  cv.addEventListener('pointermove', e => {
+    if(!G.pts.has(e.pointerId)) return;
+    G.pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if(!G.on) return;
+    const c=centroid(), d=spread(), s0=G.s, r=$('#cstage').getBoundingClientRect();
+    const z = Math.min(5, Math.max(E.fit.zMin, s0.d && d ? s0.v.z * d/s0.d : s0.v.z));
+    const px=s0.c[0]-r.left, py=s0.c[1]-r.top, qx=(px-s0.v.x)/s0.v.z, qy=(py-s0.v.y)/s0.v.z;   // point de la feuille sous les doigts
+    setView(z, c[0]-r.left - qx*z, c[1]-r.top - qy*z);
+  });
+  const gEnd = e => {
+    if(!G.pts.delete(e.pointerId)) return;
+    if(G.pts.size===0){ G.on=false; G.lock=false; }
+    else if(G.on) G.s={c:centroid(), d:spread(), v:{...E.view}};
+  };
+  cv.addEventListener('pointerup', gEnd); cv.addEventListener('pointercancel', gEnd);
+  cv.addEventListener('wheel', e => {
+    if(e.ctrlKey){ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
+    else {
+      const st=$('#cstage'), ox = E.fit.w*E.view.z > st.clientWidth+1, oy = E.fit.h*E.view.z > st.clientHeight+1;
+      const dx = ox ? e.deltaX : 0, dy = oy ? e.deltaY : 0;
+      if((dx && Math.abs(e.deltaX)>=Math.abs(e.deltaY)) || (dy && Math.abs(e.deltaY)>Math.abs(e.deltaX))){ e.preventDefault(); setView(E.view.z, E.view.x - dx, E.view.y - dy); }
+    }
+  }, {passive:false});
+
+  cv.addEventListener('pointerdown', e => {
+    if(E.pencilOnly && e.pointerType==='touch') return;
+    if(G.lock && e.pointerType==='touch') return;
+    if(active!==null || !$('#bubble').hidden) return;
+    e.preventDefault(); active=e.pointerId; cv.setPointerCapture(e.pointerId);
+    const p = pt(e); st = {down:[e.clientX,e.clientY], moved:false, base:E.ops};
+    const lineTool = LINE_TOOLS.includes(E.tool);
+    /* Poignées de l'élément sélectionné */
+    if(E.sel!=null && E.ops[E.sel] && (lineTool || E.tool==='edit')){
+      const o=E.ops[E.sel];
+      if(o.a){
+        for(const end of ['a','b']) if(dist(p,o[end]) < R()*1.3){
+          const owners = vertices().filter(v=>dist(v.pt,o[end])<0.5);
+          Object.assign(st, {mode:'vertex', owners, fixed:o[end==='a'?'b':'a'].slice(), excl:new Set(owners.map(w=>w.i+w.end))});
+          $('#selbar').hidden=true; return;
+        }
+        const m=[(o.a[0]+o.b[0])/2,(o.a[1]+o.b[1])/2];
+        if(dist(p,m) < R()*1.3){ Object.assign(st,{mode:'move', i:E.sel, from:p}); $('#selbar').hidden=true; return; }
+      }
+      if(E.tool==='edit' && hit(p)===E.sel){ Object.assign(st,{mode:'move', i:E.sel, from:p}); $('#selbar').hidden=true; return; }
+    }
+    if(E.tool==='edit'){ const i=hit(p); setSel(i); if(i>=0){ Object.assign(st,{mode:'move', i, from:p}); $('#selbar').hidden=true; } else st=null; return; }
+    if(E.sel!=null) setSel(null);
+    if(E.tool==='erase'){ st=null; const i=hit(p); if(i>=0) pushOps(withoutOp(E.ops, i)); return; }
+    if(E.tool==='text'){ st=null; active=null; askText('Texte à placer', txt => pushOps([...E.ops, {t:'text', c:E.color, w:E.w, at:p, txt, size:38}])); return; }
+    if(lineTool){
+      const v = nearVertex(p);            // partir du sommet d'un trait existant
+      const a = v ? v.pt : p;
+      Object.assign(st, {mode:'draw', fromVertex:v});
+      E.cur = {t:E.tool, c:E.color, w:E.w, a, b:a.slice()};
+    } else {
+      st.mode='draw'; st.moved=true;
+      E.cur = {t:'pen', c:E.color, w:E.w, pts:[[...p, e.pointerType==='pen'?e.pressure:0.5]]};
+    }
+    paint();
+  });
+  cv.addEventListener('pointermove', e => {
+    if(G.on || e.pointerId!==active || !st) return;
+    if(!st.moved && Math.hypot(e.clientX-st.down[0], e.clientY-st.down[1]) > 8) st.moved=true;
+    if(!st.moved) return;
+    const p = pt(e);
+    if(st.mode==='draw'){
+      if(E.cur.t==='pen'){ for(const ev of (e.getCoalescedEvents?.()||[e])) E.cur.pts.push([...pt(ev), ev.pointerType==='pen'?ev.pressure:0.5]); }
+      else E.cur.b = snapEnd(E.cur.a, p);
+      paint();
+    } else if(st.mode==='vertex'){
+      const q = snapEnd(st.fixed, p, st.excl);
+      E.ops = st.base.map((o,i)=>{ const ends=st.owners.filter(w=>w.i===i); if(!ends.length) return o; const n={...o}; ends.forEach(w=>{ n[w.end]=q.slice(); }); return n; });
+      commit();
+    } else if(st.mode==='move'){
+      const d=[p[0]-st.from[0], p[1]-st.from[1]];
+      E.ops = st.base.map((o,i)=> i===st.i ? tr(o,d) : o);
+      commit();
+    }
+  });
+  const end = e => {
+    if(e.pointerId!==active) return; active=null;
+    const s0=st; st=null; E.guide=null; E.match=null; if(!s0) return;
+    if(s0.mode==='draw'){
+      const o=E.cur; E.cur=null; if(!o) return;
+      if(o.t==='pen'){ pushOps([...E.ops, o]); return; }
+      if(!s0.moved && o.t==='cote'){ paint(); coteTap(pt(e)); return; }
+      if(!s0.moved){                      // simple appui : sélectionne le trait touché
+        const i = s0.fromVertex ? s0.fromVertex.owners[0].i : hit(pt(e));
+        setSel(i>=0 && E.ops[i].a ? i : null); return;
+      }
+      if(dist(o.a,o.b) < 12*curK()){ paint(); return; }
+      if(o.t==='cote'){ E.cur=o; paint(); askText('Valeur de la cote', txt => { E.cur=null; pushOps([...E.ops, {...o, txt}]); }, () => { E.cur=null; paint(); }, '', true); return; }
+      if(o.t==='line') o.id=uid();
+      pushOps([...E.ops, o]);
+      return;
+    }
+    if(s0.moved){ const next=E.ops; E.undo.push(s0.base); E.redo=[]; E.ops=next; changed(); }
+    else paint();
+    positionSelbar();
+  };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+}
+let bubbleOk=null, bubbleNo=null;
+/* Pavé numérique pour les cotes ; clavier normal pour le texte libre */
+let padOn=false, padUnit='mm';
+try{ const u=localStorage.getItem('rc-unit'); if(u!==null) padUnit=u; }catch{}
+function syncUnits(){ $$('#units [data-u]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.u===padUnit)); }
+function padKey(k){
+  const i=$('#bubbleIn'); let v=i.value;
+  if(k==='del') v=v.slice(0,-1);
+  else if(k===','){ if(!/[,]/.test(v)) v=(v||'0')+','; }
+  else if(v.replace(/\D/g,'').length<7) v = (v==='0' ? '' : v) + k;
+  i.value=v;
+}
+function askText(ph, ok, no, v='', pad=false){
+  const b=$('#bubble'), i=$('#bubbleIn');
+  padOn=pad; bubbleOk=ok; bubbleNo=no;
+  b.classList.toggle('padmode', pad); $('#pad').hidden=!pad; $('#units').hidden=!pad; $('#padLbl').hidden=!pad;
+  i.readOnly=pad; i.setAttribute('inputmode', pad?'none':'text');
+  if(pad){ const m=String(v).trim().match(/^([\d.,]*)\s*(mm|cm|m)?$/); if(m){ v=m[1].replace('.',','); if(m[2]) padUnit=m[2]; else if(String(v)) padUnit=''; } syncUnits(); }
+  i.placeholder=pad?'0':ph; i.value=v; b.hidden=false;
+  if(!pad) setTimeout(()=>i.focus(),30);
+}
+document.addEventListener('keydown', e => {
+  if(!padOn || $('#bubble')?.hidden) return;
+  if(/^[0-9]$/.test(e.key)){ padKey(e.key); e.preventDefault(); }
+  else if(e.key===','||e.key==='.'){ padKey(','); e.preventDefault(); }
+  else if(e.key==='Backspace'){ padKey('del'); e.preventDefault(); }
+  else if(e.key==='Enter'){ $('#bubble').requestSubmit(); e.preventDefault(); }
+  else if(e.key==='Escape'){ $('#bubbleCancel').click(); }
+});
+
+/* ---------- Remarques & mesures ---------- */
+const QUICK = ['Accès camion difficile','Prévoir échafaudage','Amiante possible, à vérifier','Gouttières à remplacer','Charpente à contrôler','Client souhaite l’Ondulit','Rappeler le client','Prévoir motorisation'];
+function mesuresHTML(){
+  const c=S.cur, t=c.toiture;
+  let h = `<div class="card-h"><h3>Détail chantier</h3></div>
+    <div class="typepick">
+      <label><input type="checkbox" data-type="toiture" ${c.types.includes('toiture')?'checked':''}>Toiture</label>
+      <label><input type="checkbox" data-type="portail" ${c.types.includes('portail')?'checked':''}>Portail / clôture</label></div>`;
+  if(c.types.includes('toiture')) h += `
+    <div class="sub-h"><h4>Toiture</h4></div>
+    <div class="grid">
+      ${field('toiture.acces','Accès / hauteur',{ph:'ex. R+1, échafaudage'})}
+      ${field('toiture.existante','Couverture existante',{checks:['Tôle ondulée','Bac acier','Toiture terrasse','Autre']})}
+      ${field('toiture.etat','État',{checks:['Bon','Moyen','Rouillée','Fuyarde']})}
+      ${field('toiture.charpente','Charpente',{checks:['Bois','Métal','Mixte','Non visible']})}
+      ${field('toiture.isolation','Isolation',{checks:['Aucune','Laine de verre','Polystyrène','Isolant mince','Autre']})}
+      ${field('toiture.produit','Produit proposé',{checks:['Ondulit','Covrib']})}
+      ${field('toiture.couleur','Couleur',{checks:['Alu','Blanc','Gris']})}
+    </div>`;
+  if(c.types.includes('portail')) h += `
+    <div class="sub-h"><h4>Portail &amp; clôture</h4><span class="eyebrow">Millimètres</span></div>
+    <div class="grid">
+      ${field('portail.type','Type',{checks:['Coulissant','Coulissant autoportant','Battant 2 vantaux','Battant 1 vantail','Portillon seul','Clôture seule']})}
+      ${field('portail.sens','Sens d’ouverture (vu de l’extérieur)',{checks:['Vers l’intérieur','Vers l’extérieur','Coulisse à gauche','Coulisse à droite']})}
+      ${field('portail.remplissage','Remplissage',{checks:['Tôle perforée','Tôle pleine','Lames horizontales','Barreaudage','Mixte','Autre']})}
+      ${field('portail.largeur','Passage entre piliers',{unit:'mm'})}
+      ${field('portail.hauteur','Hauteur du portail',{unit:'mm'})}
+      ${field('portail.hPiliers','Hauteur des piliers',{unit:'mm'})}
+      ${field('portail.refoulement','Place pour le refoulement',{unit:'mm'})}
+      ${field('portail.ral','Teinte thermolaquage',{ph:'ex. RAL 7016'})}
+    </div>`;
+  return h;
+}
+function bindMesures(){
+  const sec=$('#secMes');
+  const re = () => { sec.innerHTML = mesuresHTML(); updateTotals(); };
+  sec.onchange = e => { const t=e.target.dataset.type; if(!t) return;
+    S.cur.types = e.target.checked ? [...new Set([...S.cur.types, t])] : S.cur.types.filter(x=>x!==t); touch(); re(); };
+  sec.onclick = e => {
+    const mb=e.target.closest('[data-mode]'); if(mb){ S.cur.toiture.mode=mb.dataset.mode; touch(); re(); return; }
+    if(e.target.closest('[data-addpan]')){ const t=S.cur.toiture; t.pans.push({nom:'Pan '+(t.pans.length+1),longueur:'',largeur:'',pente:''}); touch(); re(); return; }
+    const d=e.target.closest('[data-delpan]'); if(d){ S.cur.toiture.pans.splice(+d.dataset.delpan,1); touch(); re(); }
+  };
+}
+function updateTotals(){
+  if(!$('#totSurf')) return;
+  const T = toitureTotals(S.cur.toiture);
+  T.pans.forEach((r,i)=>{ const o=$(`[data-out="${i}"]`); if(o) o.textContent = r.s ? fmt(r.s)+' m²' : '—'; });
+  $('#totSurf').textContent = fmt(T.surf)+' m²'; $('#totLin').textContent = fmt(T.lin)+' ml';
+}
+
+/* ---------- Rapport ---------- */
+function reportText(c){
+  const L=[`RELEVÉ DE CHANTIER — ${fullName(c)||'Sans nom'}`, `Adresse : ${fullAdr(c)||'—'}`, `Tél. : ${c.tel||'—'}   E-mail : ${c.email||'—'}`, `Visite : ${c.date?new Date(c.date).toLocaleDateString('fr-FR'):'—'}`, ''];
+  if(c.notes) L.push('REMARQUES', c.notes, '');
+  if(c.types.includes('toiture')){
+    const t=c.toiture;
+    L.push('TOITURE', `Existante : ${listVal(t.existante)||'—'} · État : ${listVal(t.etat)||'—'} · Charpente : ${listVal(t.charpente)||'—'}`,
+      `Isolation : ${listVal(t.isolation)||'—'} · Accès : ${t.acces||'—'}`,
+      `Produit proposé : ${listVal(t.produit)||'—'} · Couleur : ${listVal(t.couleur)||'—'}`);
+    L.push('');
+  }
+  if(c.types.includes('portail')){
+    const p=c.portail; L.push('PORTAIL');
+    [['type','Type'],['sens','Ouverture (vu de l’extérieur)'],['remplissage','Remplissage'],['largeur','Passage (mm)'],['hauteur','Hauteur (mm)'],['hPiliers','Piliers (mm)'],['refoulement','Refoulement (mm)'],['ral','Teinte']]
+      .forEach(([k,l])=>{ const v=listVal(p[k]); if(v) L.push(`  ${l} : ${v}`); });
+  }
+  return L.join('\n');
+}
+const kv = pairs => `<div class="kv">${pairs.filter(([,v])=>v!==''&&v!=null&&v!==false).map(([k,v])=>`<div><span>${esc(k)}</span><span>${esc(v===true?'Oui':v)}</span></div>`).join('')}</div>`;
+function openReport(){
+  const c=S.cur, r=$('#report');
+  const photos=S.media.filter(m=>m.kind==='photo'), cr=S.media.filter(m=>m.kind==='croquis'), files=S.media.filter(m=>m.kind==='fichier');
+  let h = `<h1>${esc(fullName(c)||'Sans nom')}</h1>
+    <p style="color:#5a6870;margin:6px 0 0">Visite du ${c.date?new Date(c.date).toLocaleDateString('fr-FR',{dateStyle:'long'}):'—'} · EcoTole</p>
+    <h2>Client</h2>${kv([['Nom',c.nom],['Prénom',c.prenom],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']])}`;
+  if(c.notes) h += `<h2>Remarques</h2><div class="notes">${esc(c.notes)}</div>`;
+  if(cr.length) h += `<h2>Croquis</h2><div class="pics">${cr.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
+  if(c.types.includes('toiture')){
+    const t=c.toiture;
+    h += `<h2>Toiture</h2>${kv([['Couverture existante',listVal(t.existante)],['État',listVal(t.etat)],['Charpente',listVal(t.charpente)],['Isolation',listVal(t.isolation)],['Accès',t.acces],['Produit proposé',listVal(t.produit)],['Couleur',listVal(t.couleur)]])}`;
+  }
+  if(c.types.includes('portail')){
+    const p=c.portail;
+    h += `<h2>Portail &amp; clôture</h2>${kv([['Type',listVal(p.type)],['Ouverture (vu de l’extérieur)',listVal(p.sens)],['Remplissage',listVal(p.remplissage)],['Passage entre piliers',p.largeur&&p.largeur+' mm'],['Hauteur',p.hauteur&&p.hauteur+' mm'],['Hauteur piliers',p.hPiliers&&p.hPiliers+' mm'],['Refoulement',p.refoulement&&p.refoulement+' mm'],['Teinte',p.ral]])}`;
+  }
+  if(photos.length) h += `<h2>Photos</h2><div class="pics">${photos.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
+  if(files.length) h += `<h2>Fichiers joints</h2><ul>${files.map(f=>`<li>${esc(f.name)}${f.legende?' — '+esc(f.legende):''}</li>`).join('')}</ul>`;
+  r.innerHTML = `<div class="rep-bar"><button class="btn" type="button" id="rClose">‹ Retour</button><span style="flex:1"></span>
+      <button class="btn" type="button" id="rCopy">Copier le résumé</button>
+      ${inFrame?'':'<button class="btn" type="button" id="rJson">Exporter ce chantier</button><button class="btn primary" type="button" id="rPrint">PDF / Imprimer</button>'}</div>
+    ${inFrame?'<p class="note" style="text-align:center;margin:12px 16px 0">Dans l’appli installée sur l’iPad, un bouton « PDF / Imprimer » enregistre ce rapport en PDF.</p>':''}
+    <article class="rep">${h}</article>`;
+  r.hidden=false; r.scrollTop=0;
+  $('#rClose').onclick = () => r.hidden=true;
+  $('#rCopy').onclick = async () => { try{ await navigator.clipboard.writeText(reportText(c)); toast('Résumé copié'); }catch{ toast('Copie refusée par l’appareil'); } };
+  if(!inFrame){ $('#rPrint').onclick = () => printWith('pdf'); $('#rJson').onclick = () => download([c], S.media, `releve-${slug(fullName(c))}.json`); }
+}
+const slug = s => (s||'chantier').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+
+/* ---------- Sauvegarde / restauration ---------- */
+/* ---------- Exports : PDF, JSON, étiquette contact ---------- */
+function labelHTML(c){
+  const d = c.date ? new Date(c.date).toLocaleDateString('fr-FR') : '';
+  return `<div class="label">
+    <div class="lb-top"><span>EcoTole</span><span>Relevé chantier</span></div>
+    <div class="lb-name">${esc(fullName(c)||'Client')}</div>
+    ${c.tel?`<div class="lb-tel">${esc(c.tel)}</div>`:''}
+    ${fullAdr(c)?`<div class="lb-adr">${esc(c.adresse)}${c.adresse&&(c.cp||c.ville)?'<br>':''}${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}
+    ${c.email?`<div class="lb-mail">${esc(c.email)}</div>`:''}
+    <div class="lb-bot"><span>Visite ${esc(d)}</span><span>${esc(STATUTS[c.statut]||'')}</span></div>
+  </div>`;
+}
+function printWith(mode){
+  // mode 'label' : page de 62 × 60 mm ; sinon A4 pour le rapport
+  let st = $('#pageStyle'); if(!st){ st=document.createElement('style'); st.id='pageStyle'; document.head.appendChild(st); }
+  st.textContent = mode==='label' ? '@page{size:62mm 60mm;margin:0}' : '@page{size:A4;margin:12mm}';
+  document.body.classList.toggle('print-label', mode==='label');
+  const done = () => { document.body.classList.remove('print-label'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  setTimeout(() => window.print(), 250);
+}
+function openExport(){
+  const d=$('#exportDlg'), c=S.cur; if(!c) return;
+  $('#lbPreview').innerHTML = labelHTML(c);
+  $('#expNote').textContent = inFrame ? 'Dans l’aperçu Claude, l’impression et le téléchargement sont bloqués : ils marchent dans l’appli installée (iPad, Mac ou PC).' : '';
+  d.hidden=false;
+}
+$('#expClose').onclick = () => $('#exportDlg').hidden = true;
+$('#exportDlg').onclick = async e => {
+  if(e.target.id==='exportDlg'){ $('#exportDlg').hidden=true; return; }
+  const b = e.target.closest('[data-exp]'); if(!b) return;
+  const c = S.cur; $('#exportDlg').hidden = true;
+  if(b.dataset.exp==='pdf'){ openReport(); printWith('pdf'); }
+  if(b.dataset.exp==='json') download([c], S.media, `releve-${slug(fullName(c))}-${c.date||''}.json`);
+  if(b.dataset.exp==='label'){ $('#labelSheet').innerHTML = labelHTML(c); printWith('label'); }
+};
+function download(chantiers, media, name){
+  const blob = new Blob([JSON.stringify({app:'releves-chantier', v:2, exported:new Date().toISOString(), chantiers, media})], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  if(inFrame) toast('La sauvegarde marche dans l’appli installée');
+}
+$('#exportAll').onclick = async () => { await flushDrawing(); download(S.list, await DB.all('media'), `releves-sauvegarde-${new Date().toISOString().slice(0,10)}.json`); };
+$('#importFile').onchange = async e => {
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  try{
+    const d = JSON.parse(await f.text()); if(d.app!=='releves-chantier') throw 0;
+    for(const c of d.chantiers) await DB.put('chantiers', c);
+    for(const m of d.media||[]) await DB.put('media', m);
+    S.list = await DB.all('chantiers'); renderList(); toast(`${d.chantiers.length} chantier(s) restauré(s)`); storeInfo();
+  }catch{ toast('Fichier de sauvegarde illisible'); }
+};
+
+/* ---------- Exemple au premier lancement ---------- */
+async function seed(){
+  const c = newChantier();
+  Object.assign(c, {exemple:true, client:'Hoarau Jean', nom:'Hoarau', prenom:'Jean', tel:'0692 00 00 00', adresse:'12 chemin des Goyaviers', cp:'97410', ville:'Saint-Pierre', statut:'chiffrer', types:['toiture'],
+    notes:'• Accès camion par l’arrière de la parcelle\n• Tôles d’origine rouillées au faîtage, pas d’infiltration visible\n• Client intéressé par l’Ondulit par-dessus l’existant\n• Prévoir échafaudage côté rue'});
+  c.toiture = {mode:'rampant', existante:['Tôle ondulée'], etat:['Rouillée'], charpente:['Bois'], isolation:['Aucune'], acces:'Plain-pied', produit:['Ondulit'], couleur:['Gris'],
+    pans:[{nom:'Pan avant',longueur:'5.20',largeur:'11.40',pente:'30'},{nom:'Pan arrière',longueur:'5.20',largeur:'11.40',pente:'30'},{nom:'Varangue',longueur:'3.10',largeur:'6.00',pente:'15'}],
+    lineaires:{faitage:'11.40',rives:'20.80',egouts:'28.80',brizi:'6.00',solins:'6.00'}, descentes:'3'};
+  await DB.rawPut('chantiers', c);
+  const ops = [
+    {t:'line',c:'#1a2226',w:6,a:[240,260],b:[1240,260],id:'s-top'},{t:'line',c:'#1a2226',w:6,a:[1240,260],b:[1240,760],id:'s-right'},
+    {t:'line',c:'#1a2226',w:6,a:[1240,760],b:[240,760]},{t:'line',c:'#1a2226',w:6,a:[240,760],b:[240,260]},
+    {t:'line',c:'#1d5ca8',w:3,a:[240,510],b:[1240,510]},
+    {t:'line',c:'#1a2226',w:6,a:[640,760],b:[640,1000]},{t:'line',c:'#1a2226',w:6,a:[640,1000],b:[1240,1000],id:'s-bot'},{t:'line',c:'#1a2226',w:6,a:[1240,1000],b:[1240,760]},
+    {t:'cote',c:'#c62828',w:3,ref:'s-top',side:-1,off:70,a:[240,190],b:[1240,190],txt:'11,40 m'},
+    {t:'cote',c:'#c62828',w:3,ref:'s-right',side:-1,off:70,a:[1310,260],b:[1310,760],txt:'2 × 5,20 m'},
+    {t:'cote',c:'#c62828',w:3,ref:'s-bot',side:1,off:70,a:[640,1070],b:[1240,1070],txt:'6,00 m'},
+    {t:'text',c:'#1d5ca8',w:3,at:[740,470],txt:'Faîtage',size:30},
+    {t:'text',c:'#1a2226',w:3,at:[940,880],txt:'Varangue 15 %',size:30},
+    {t:'arrow',c:'#f2b705',w:6,a:[420,980],b:[620,880]},{t:'text',c:'#1a2226',w:3,at:[330,1010],txt:'Brizi',size:30}
+  ];
+  const cvs = document.createElement('canvas'); cvs.width=1600; cvs.height=1150; render(cvs.getContext('2d'),1600,1150,null,ops);
+  await DB.rawPut('media', {id:uid(), chantierId:c.id, kind:'croquis', data:cvs.toDataURL('image/jpeg',0.86), ops, w:1600, h:1150, legende:'Vue en plan toiture', created:Date.now()});
+}
+
+window.addEventListener('pagehide', () => { saveSheet(); });
+document.addEventListener('visibilitychange', () => { if(document.hidden) saveSheet(); });
+if('serviceWorker' in navigator && location.protocol==='https:' && !inFrame) navigator.serviceWorker.register('sw.js').catch(()=>{});
+load();
+})();
+</script>
+
+</body>
+</html>
