@@ -567,6 +567,7 @@ function normalize(c){
   for(const k of ['existante','etat','charpente','isolation']) if(t[k] && !Array.isArray(t[k])) t[k] = [t[k]];
   if(t.ondulit === true && !t.produit) t.produit = ['Ondulit'];
   if(Array.isArray(t.produit)) t.produit = t.produit.map(x => x==='Covrib' ? 'Coverib' : x);
+  c.perforee ??= {};
   const p = c.portail || {};
   for(const k of ['type','sens','remplissage']) if(p[k] && !Array.isArray(p[k])) p[k] = [p[k]];
   return c;
@@ -1644,7 +1645,8 @@ function mesuresHTML(){
   let h = `<div class="card-h"><h3>Détail chantier</h3></div>
     <div class="typepick">
       <label><input type="checkbox" data-type="toiture" ${c.types.includes('toiture')?'checked':''}>Toiture</label>
-      <label><input type="checkbox" data-type="portail" ${c.types.includes('portail')?'checked':''}>Portail / clôture</label></div>`;
+      <label><input type="checkbox" data-type="portail" ${c.types.includes('portail')?'checked':''}>Portail / clôture</label>
+      <label><input type="checkbox" data-type="perforee" ${c.types.includes('perforee')?'checked':''}>Tôle perforée</label></div>`;
   if(c.types.includes('toiture')) h += `
     <div class="sub-h"><h4>Toiture</h4></div>
     <div class="grid">
@@ -1667,6 +1669,19 @@ function mesuresHTML(){
       ${field('portail.hPiliers','Hauteur des piliers',{unit:'mm'})}
       ${field('portail.refoulement','Place pour le refoulement',{unit:'mm'})}
       ${field('portail.ral','Teinte thermolaquage',{ph:'ex. RAL 7016'})}
+    </div>`;
+  if(c.types.includes('perforee')) h += `
+    <div class="sub-h"><h4>Tôle perforée</h4><span class="eyebrow">Millimètres</span></div>
+    <div class="grid">
+      ${field('perforee.usage','Utilisation',{checks:['Bardage','Garde-corps','Brise-vue / claustra','Sous-face','Remplissage portail','Habillage','Autre']})}
+      ${field('perforee.motif','Perforation',{checks:['Trous ronds','Trous carrés','Oblongs','Motif décoratif']})}
+      ${field('perforee.matiere','Matière',{checks:['Acier','Galvanisé','Aluminium','Inox']})}
+      ${field('perforee.largeur','Largeur',{unit:'mm'})}
+      ${field('perforee.hauteur','Hauteur',{unit:'mm'})}
+      ${field('perforee.epaisseur','Épaisseur',{unit:'mm'})}
+      ${field('perforee.quantite','Quantité',{ph:'ex. 4 panneaux'})}
+      ${field('perforee.fixation','Fixation / ossature',{ph:'ex. sur cadre alu, vis'})}
+      ${field('perforee.ral','Teinte thermolaquage',{ph:'ex. RAL 7016'})}
     </div>`;
   return h;
 }
@@ -1703,9 +1718,12 @@ function reportText(c){
     const p=c.portail; L.push('PORTAIL');
     [['type','Type'],['sens','Ouverture (vu de l’extérieur)'],['remplissage','Remplissage'],['largeur','Passage (mm)'],['hauteur','Hauteur (mm)'],['hPiliers','Piliers (mm)'],['refoulement','Refoulement (mm)'],['ral','Teinte']]
       .forEach(([k,l])=>{ const v=listVal(p[k]); if(v) L.push(`  ${l} : ${v}`); });
+    L.push('');
   }
+  if(c.types.includes('perforee')){ L.push('TÔLE PERFORÉE'); perforeeRows(c).forEach(([k,v])=>{ if(v) L.push(`  ${k} : ${v}`); }); }
   return L.join('\n');
 }
+const perforeeRows = c => { const f=c.perforee||{}; return [['Utilisation',listVal(f.usage)],['Perforation',listVal(f.motif)],['Matière',listVal(f.matiere)],['Largeur',f.largeur&&f.largeur+' mm'],['Hauteur',f.hauteur&&f.hauteur+' mm'],['Épaisseur',f.epaisseur&&f.epaisseur+' mm'],['Quantité',f.quantite],['Fixation / ossature',f.fixation],['Teinte',f.ral]]; };
 const kv = pairs => `<div class="kv">${pairs.filter(([,v])=>v!==''&&v!=null&&v!==false).map(([k,v])=>`<div><span>${esc(k)}</span><span>${esc(v===true?'Oui':v)}</span></div>`).join('')}</div>`;
 function openReport(){
   const c=S.cur, r=$('#report');
@@ -1723,6 +1741,7 @@ function openReport(){
     const p=c.portail;
     h += `<h2>Portail &amp; clôture</h2>${kv([['Type',listVal(p.type)],['Ouverture (vu de l’extérieur)',listVal(p.sens)],['Remplissage',listVal(p.remplissage)],['Passage entre piliers',p.largeur&&p.largeur+' mm'],['Hauteur',p.hauteur&&p.hauteur+' mm'],['Hauteur piliers',p.hPiliers&&p.hPiliers+' mm'],['Refoulement',p.refoulement&&p.refoulement+' mm'],['Teinte',p.ral]])}`;
   }
+  if(c.types.includes('perforee')) h += `<h2>Tôle perforée</h2>${kv(perforeeRows(c))}`;
   if(photos.length) h += `<h2>Photos</h2><div class="pics">${photos.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
   if(files.length) h += `<h2>Fichiers joints</h2><ul>${files.map(f=>`<li>${esc(f.name)}${f.legende?' — '+esc(f.legende):''}</li>`).join('')}</ul>`;
   r.innerHTML = `<div class="rep-bar"><button class="btn" type="button" id="rClose">‹ Retour</button><span style="flex:1"></span>
@@ -1846,6 +1865,7 @@ async function reportPDF(c, media){
     rows([['Couverture existante',listVal(t.existante)],['État',listVal(t.etat)],['Charpente',listVal(t.charpente)],['Isolation',listVal(t.isolation)],['Accès',t.acces],['Produit proposé',listVal(t.produit)],['Couleur',listVal(t.couleur)]]); }
   if(c.types.includes('portail')){ const p=c.portail; section('Portail et clôture');
     rows([['Type',listVal(p.type)],['Ouverture (vu de l’extérieur)',listVal(p.sens)],['Remplissage',listVal(p.remplissage)],['Passage entre piliers',p.largeur&&p.largeur+' mm'],['Hauteur',p.hauteur&&p.hauteur+' mm'],['Hauteur piliers',p.hPiliers&&p.hPiliers+' mm'],['Refoulement',p.refoulement&&p.refoulement+' mm'],['Teinte',p.ral]]); }
+  if(c.types.includes('perforee')){ section('Tôle perforée'); rows(perforeeRows(c)); }
   if(cr.length) await images(cr, 'Croquis');
   if(photos.length) await images(photos, 'Photos');
   if(files.length){ section('Fichiers joints (dossier "fichiers" du zip)'); for(const f of files){ need(6); para('- '+f.name+(f.legende?' - '+f.legende:'')); } }
