@@ -31,5 +31,7 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
 - iPad : cases de texte verrouillées tant qu'on ne les touche pas (bloque l'écriture manuscrite du Pencil),
   pavé numérique maison pour téléphone, code postal et mesures en mm.
 - Dessin : traits éditables, aimants (sommets, horizontal/vertical/45° à 5° près, même longueur), bouton « Dupliquer la feuille » (copie traits/cotes, nouvelles id + refs de cotes remappées), cotes posées en touchant un trait,
-  zoom 2 doigts, plein écran qui agrandit la feuille aux proportions de l'écran.
+  feuille infinie (vue E.view = échelle s + coin ox/oy, canevas à la taille du cadre redessiné à chaque zoom/déplacement ;
+  zoom 20 % à 600 % du cadrage « 100 % » = tout le dessin ; 2 doigts, outil Modifier dans le vide, molette en plein écran),
+  image enregistrée = feuille de départ (m.w × m.h) + tout le dessin avec marge (sheetImage), échelle des traits fixe m.k.
 - Exports : PDF (impression A4), JSON (réimportable), étiquette contact 62 × 60 mm, projet calepinage (.json au format « calepinage-toiture » v2 : fiche chantier remplie, pans vides ; ville = « ville code postal », tôle = produit + couleur ; ouvert par « Ouvrir (.json) » du calepinage G:\OneDrive\Bureau\teste calepinage\calepinage.html).

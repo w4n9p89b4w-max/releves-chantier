@@ -984,7 +984,7 @@ function drawHTML(){
     </div>
     <div class="grp zoom" aria-label="Zoom">
       <button class="tool" type="button" id="zOut" aria-label="Dézoomer">−</button>
-      <button class="tool" type="button" id="zReset" title="Revenir à la feuille entière">100 %</button>
+      <button class="tool" type="button" id="zReset" title="Voir tout le dessin">100 %</button>
       <button class="tool" type="button" id="zIn" aria-label="Zoomer">+</button>
     </div>
     <div class="grp">
@@ -1047,15 +1047,15 @@ function mountDrawing(){
     const base = (src.legende || (src.kind==='photo' ? 'Photo' : 'Croquis')).replace(/ \(copie( \d+)?\)$/, '');
     const n = S.media.filter(x => x.kind===src.kind && (x.legende||'').startsWith(base+' (copie')).length;
     const m = {id:uid(), chantierId:S.cur.id, kind:src.kind, legende: base + (n ? ` (copie ${n+1})` : ' (copie)'),
-      ops, w:src.w||$('#cv').width, h:src.h||$('#cv').height, data:src.data, created:Date.now()};
+      ops, w:src.w||1600, h:src.h||1150, data:src.data, created:Date.now()};
     if(src.k !== undefined) m.k = src.k;
     if(src.kind==='photo') m.base = src.base;
     S.media.push(m); await DB.put('media', m); touch();
     loadSheet(m); if(m.kind==='photo') renderGallery();
     toast('Feuille dupliquée');
   };
-  $('#edFull').onclick = () => { const on = sec.classList.toggle('full'); $('#edFullLbl').textContent = on ? 'Réduire' : 'Plein écran'; document.body.style.overflow = on ? 'hidden' : ''; E.view.center=true; E.view.z=1; fit(); paint(); };
-  $('#zIn').onclick = () => zoomAt(1.5); $('#zOut').onclick = () => zoomAt(1/1.5); $('#zReset').onclick = () => centerView(1);
+  $('#edFull').onclick = () => { const on = sec.classList.toggle('full'); $('#edFullLbl').textContent = on ? 'Réduire' : 'Plein écran'; document.body.style.overflow = on ? 'hidden' : ''; E.view.center=true; fit(); };
+  $('#zIn').onclick = () => zoomAt(1.5); $('#zOut').onclick = () => zoomAt(1/1.5); $('#zReset').onclick = () => fitView();
   $('#edTitle').oninput = e => { if(!E.m) return; E.m.legende = e.target.value; E.dirty=true; scheduleSave(); };
   $('#edDel').onclick = e => armed(e.currentTarget, 'Confirmer', async () => {
     if(E.m.kind==='photo'){ pushOps([]); toast('Annotations retirées'); return; }
@@ -1088,14 +1088,14 @@ function loadSheet(m, remount){
   if(E.m!==m || remount){ E.ops = (m.ops||[]).slice(); E.undo=[]; E.redo=[]; }
   E.m = m; m.chantierId ??= S.cur.id; E.cur=null; E.dirty=false; E.sel=null; E.guide=null; E.match=null; if($('#selbar')) $('#selbar').hidden=true;
   const cv = $('#cv'); if(!cv) return;
-  cv.width = m.w || 1600; cv.height = m.h || 1150;
+  m.k ??= kOf(m.w || 1600, m.h || 1150);       // échelle des traits et textes, fixe pour la feuille
   $('#edTitle').value = m.legende || '';
   $('#drawWhat').textContent = m.kind==='photo' ? 'Annotation d’une photo' : 'Croquis';
   $('#edDel').textContent = m.kind==='photo' ? 'Retirer les annotations' : 'Supprimer la feuille';
   if(m.kind==='photo' && E.tool==='pen') E.tool='cote';
   syncTb(); renderStrip();
-  const go = () => { fit(); commit(); };
-  E.view = {z:1, x:0, y:0, center:true};
+  const go = () => fit();
+  E.view = {s:1, ox:0, oy:0, base:1, center:true};
   if(m.kind==='photo'){ E.base=new Image(); E.base.onload=go; E.base.src=m.base; } else { E.base=null; go(); }
 }
 function renderStrip(){
@@ -1106,65 +1106,53 @@ function renderStrip(){
     + `<button type="button" class="add" data-add>+ Nouvelle feuille</button>`;
 }
 let _blank; function blankThumb(){ if(_blank) return _blank; const c=document.createElement('canvas'); c.width=160; c.height=115; background(c.getContext('2d'),160,115,null,4); return _blank=c.toDataURL(); }
-/* Taille d'affichage : la feuille prend toute la largeur disponible (et tout l'écran en plein écran) */
+/* ---------- Feuille infinie ----------
+   Le dessin est en coordonnées « feuille » sans limite. La vue = échelle V.s (pixels du canevas par unité)
+   et coin haut-gauche (V.ox, V.oy). Le canevas a la taille du cadre à l'écran et est redessiné à chaque
+   déplacement ou zoom. « 100 % » = tout le dessin visible. */
+const DPR = () => Math.min(2, window.devicePixelRatio || 1);
+const sheetRect = m => [0, 0, m?.w || 1600, m?.h || 1150];
+function contentRect(ops, k, m, marge){
+  if(m?.kind === 'photo') return sheetRect(m);
+  let r = sheetRect(m);
+  resolveCotes(ops, k);
+  for(const o of ops){
+    if(o.orphan) continue;
+    const b = bbox(o, k), e = marge * k;
+    r = [Math.min(r[0], b[0]-e), Math.min(r[1], b[1]-e), Math.max(r[2], b[2]+e), Math.max(r[3], b[3]+e)];
+  }
+  return r;
+}
 function fit(){
-  const cv=$('#cv'), sec=$('#drawSec'), stage=$('#cstage'), wr=$('#cwrap'); if(!cv || !stage) return;
+  const cv=$('#cv'), sec=$('#drawSec'), stage=$('#cstage'), wr=$('#cwrap'); if(!cv || !stage || !E.m) return;
   const full = sec.classList.contains('full');
-  const W = wr.clientWidth;
-  // En page normale : cadre plus haut, mais au plus 25 % de la largeur de la feuille hors du cadre
-  const H = full ? wr.clientHeight : Math.max(320, Math.min(window.innerHeight - 130, W / (0.75 * cv.width/cv.height)));
-  if(full) growSheet(W, H);
-  // Le cadre prend toute la place ; la feuille le remplit (ses bords peuvent dépasser : 2 doigts ou « − » pour les voir)
-  const k = Math.max(W/cv.width, H/cv.height);
-  const w = Math.round(cv.width*k), h = Math.round(cv.height*k);
+  const W = wr.clientWidth, H = full ? wr.clientHeight : Math.max(320, window.innerHeight - 130);
   stage.style.width = W+'px'; stage.style.height = H+'px';
-  cv.style.width = w+'px'; cv.style.height = h+'px';
-  E.fit = {w, h, zMin: Math.min(1, W/w, H/h)};
-  if(E.view.center) centerView(E.view.z); else setView(E.view.z, E.view.x, E.view.y);
+  const d = DPR(); cv.width = Math.max(1, Math.round(W*d)); cv.height = Math.max(1, Math.round(H*d));
+  cv.style.width = W+'px'; cv.style.height = H+'px'; cv.style.transform = '';
+  if(E.view.center) fitView(); else setView(E.view.s, E.view.ox, E.view.oy);
 }
-function centerView(z){
-  const stage=$('#cstage'); if(!stage || !E.fit) return;
-  z = Math.min(5, Math.max(E.fit.zMin, z));
-  setView(z, (stage.clientWidth - E.fit.w*z)/2, (stage.clientHeight - E.fit.h*z)/2);
+function fitView(){
+  const cv=$('#cv'); if(!cv || !E.m) return;
+  const r = contentRect(E.ops, curK(), E.m, 60), w = r[2]-r[0], h = r[3]-r[1];
+  const s = Math.min(cv.width/w, cv.height/h) * 0.95;
+  E.view.base = s;
+  setView(s, (r[0]+r[2])/2 - cv.width/s/2, (r[1]+r[3])/2 - cv.height/s/2);
 }
-/* En plein écran, un croquis s'agrandit aux proportions de l'écran : plus de bandes vides.
-   La feuille ne fait que s'agrandir (rien n'est coupé) et le dessin reste centré. */
-function growSheet(W, H){
-  const m=E.m, cv=$('#cv');
-  if(!m || m.kind!=='croquis' || SYNC.role==='viewer' || W<50 || H<50) return;
-  const w=cv.width, h=cv.height, ratio=W/H;
-  let nw=w, nh=h;
-  if(ratio > w/h*1.02) nw = Math.round(h*ratio); else if(ratio < w/h/1.02) nh = Math.round(w/ratio);
-  if(nw===w && nh===h) return;
-  m.k = m.k ?? kOf(w,h);
-  const dx=(nw-w)/2, dy=(nh-h)/2;
-  const mv = q => [q[0]+dx, q[1]+dy, ...q.slice(2)];
-  const shift = ops => ops.map(o => o.pts ? {...o, pts:o.pts.map(mv)} : o.a ? {...o, a:mv(o.a), b:mv(o.b)} : o.at ? {...o, at:mv(o.at)} : o);
-  E.ops = shift(E.ops); E.undo = E.undo.map(shift); E.redo = E.redo.map(shift);
-  m.w = cv.width = nw; m.h = cv.height = nh;
+const clampS = s => { const b = E.view.base || s; return Math.min(b*6, Math.max(b*0.2, s)); };
+function setView(s, ox, oy){
+  s = clampS(s);
+  E.view = {...E.view, s, ox, oy, center:false};
   commit();
-  if(E.ops.length || m.id){ E.dirty = true; scheduleSave(); }
-}
-/* Zoom et déplacement de la feuille (2 doigts, boutons, ou pincement du trackpad) */
-E.view = {z:1, x:0, y:0, center:true};
-function setView(z, x, y){
-  const stage=$('#cstage'), cv=$('#cv'); if(!stage || !E.fit) return;
-  const w=stage.clientWidth, h=stage.clientHeight;
-  z = Math.min(5, Math.max(E.fit.zMin, z));
-  const cw=E.fit.w*z, ch=E.fit.h*z;
-  x = cw<=w ? (w-cw)/2 : Math.min(0, Math.max(w - cw, x));
-  y = ch<=h ? (h-ch)/2 : Math.min(0, Math.max(h - ch, y));
-  E.view = {z, x, y};
-  cv.style.transform = `translate(${x}px,${y}px) scale(${z})`;
-  const r=$('#zReset'); if(r) r.textContent = Math.round(z*100)+' %';
+  const r=$('#zReset'); if(r) r.textContent = Math.round(s / (E.view.base||s) * 100) + ' %';
   positionSelbar();
 }
 function zoomAt(f, cx, cy){
-  const stage=$('#cstage'); if(!stage) return;
-  const r = stage.getBoundingClientRect();
-  const px = (cx ?? r.left + r.width/2) - r.left, py = (cy ?? r.top + r.height/2) - r.top;
-  const {z,x,y} = E.view, nz = Math.min(5, Math.max(E.fit?.zMin ?? 1, z*f));
-  setView(nz, px - (px - x)*nz/z, py - (py - y)*nz/z);
+  const cv=$('#cv'); if(!cv) return;
+  const r = cv.getBoundingClientRect(), d = DPR(), V = E.view;
+  const px = ((cx ?? r.left + r.width/2) - r.left) * d, py = ((cy ?? r.top + r.height/2) - r.top) * d;
+  const wx = V.ox + px/V.s, wy = V.oy + py/V.s, s = clampS(V.s * f);
+  setView(s, wx - px/s, wy - py/s);
 }
 window.addEventListener('resize', () => { fit(); positionSelbar(); });
 
@@ -1220,17 +1208,49 @@ function resolveCotes(ops, k){
 }
 function withoutOp(ops, i){ const id=ops[i]?.id; return ops.filter((o,j)=> j!==i && !(id && o.ref===id)); }
 function render(c, W, H, base, ops, k=kOf(W,H)){ resolveCotes(ops, k); background(c,W,H,base); ops.forEach(o=>drawOp(c,o,k)); }
-/* Échelle des traits et textes de la feuille ouverte (fixe même si la feuille a été agrandie) */
-const curK = () => E.m?.k ?? kOf($('#cv').width, $('#cv').height);
-function commit(){
-  const cv=$('#cv'); if(!cv) return;
-  E.layer ??= document.createElement('canvas'); E.layer.width=cv.width; E.layer.height=cv.height;
-  render(E.layer.getContext('2d'), cv.width, cv.height, E.base, E.ops, curK()); paint();
+/* Échelle des traits et textes de la feuille ouverte */
+const curK = () => E.m?.k ?? 1;
+/* Quadrillage sur la zone visible uniquement (feuille sans bord) */
+function grid(c, x0, y0, x1, y1, s){
+  c.fillStyle = '#fff'; c.fillRect(x0, y0, x1-x0, y1-y0);
+  c.lineWidth = 1/s;
+  for(const [st, col] of [[40,'#e3e9ee'], [200,'#cdd6dd']]){
+    if(st*s < 5) continue;
+    c.strokeStyle = col; c.beginPath();
+    for(let x = Math.floor(x0/st)*st; x <= x1; x += st){ c.moveTo(x, y0); c.lineTo(x, y1); }
+    for(let y = Math.floor(y0/st)*st; y <= y1; y += st){ c.moveTo(x0, y); c.lineTo(x1, y); }
+    c.stroke();
+  }
 }
-function paint(){ const cv=$('#cv'); if(!cv || !E.layer) return; resolveCotes(E.ops, curK()); const x=cv.getContext('2d'); x.clearRect(0,0,cv.width,cv.height); x.drawImage(E.layer,0,0); if(E.cur) drawOp(x,E.cur,curK()); overlay(x, cv); }
+const toWorld = (c, V) => c.setTransform(V.s, 0, 0, V.s, -V.ox*V.s, -V.oy*V.s);
+function commit(){
+  const cv=$('#cv'); if(!cv || !E.m) return;
+  E.layer ??= document.createElement('canvas'); E.layer.width=cv.width; E.layer.height=cv.height;
+  const c = E.layer.getContext('2d'), V = E.view, k = curK();
+  c.setTransform(1,0,0,1,0,0);
+  const x0 = V.ox, y0 = V.oy, x1 = V.ox + cv.width/V.s, y1 = V.oy + cv.height/V.s;
+  toWorld(c, V);
+  if(E.m.kind === 'photo'){
+    c.fillStyle = '#d9dfe3'; c.fillRect(x0, y0, x1-x0, y1-y0);
+    if(E.base) c.drawImage(E.base, 0, 0, E.m.w, E.m.h);
+  } else grid(c, x0, y0, x1, y1, V.s);
+  resolveCotes(E.ops, k); E.ops.forEach(o => drawOp(c, o, k));
+  c.setTransform(1,0,0,1,0,0);
+  paint();
+}
+function paint(){
+  const cv=$('#cv'); if(!cv || !E.layer) return;
+  resolveCotes(E.ops, curK());
+  const x = cv.getContext('2d');
+  x.setTransform(1,0,0,1,0,0); x.clearRect(0,0,cv.width,cv.height); x.drawImage(E.layer,0,0);
+  toWorld(x, E.view);
+  if(E.cur) drawOp(x, E.cur, curK());
+  overlay(x, cv);
+  x.setTransform(1,0,0,1,0,0);
+}
 /* Repères d'édition (jamais enregistrés dans l'image) */
 const LINE_TOOLS = ['line','cote','arrow'];
-const scrScale = cv => { const w=cv.getBoundingClientRect().width; return w ? cv.width/w : 1; };
+const scrScale = () => DPR() / (E.view.s || 1);      // unités de dessin par pixel d'écran
 function bbox(o, k){
   if(o.a) return [Math.min(o.a[0],o.b[0]),Math.min(o.a[1],o.b[1]),Math.max(o.a[0],o.b[0]),Math.max(o.a[1],o.b[1])];
   if(o.pts){ const xs=o.pts.map(p=>p[0]), ys=o.pts.map(p=>p[1]); return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]; }
@@ -1240,7 +1260,7 @@ function overlay(x, cv){
   const s=scrScale(cv), k=curK();
   const dot = (p, r, fill) => { x.beginPath(); x.arc(p[0],p[1],r,0,7); x.fillStyle=fill; x.fill(); x.lineWidth=2*s; x.strokeStyle='#1d5ca8'; x.stroke(); };
   if(E.guide){ x.save(); x.setLineDash([8*s,6*s]); x.lineWidth=1.5*s; x.strokeStyle='#1d5ca8';
-    const g=E.guide, D=cv.width+cv.height, u=g.u||[1,0];
+    const g=E.guide, D=1e6, u=g.u||[1,0];
     x.beginPath(); x.moveTo(g.a[0]-u[0]*D, g.a[1]-u[1]*D); x.lineTo(g.a[0]+u[0]*D, g.a[1]+u[1]*D); x.stroke(); x.restore(); }
   if(E.match && E.ops[E.match.i]){
     const tag = (A, B) => {       // trait surligné + double barre « = » au milieu (longueurs égales)
@@ -1275,7 +1295,7 @@ function positionSelbar(){
   bar.querySelector('[data-sa="value"]').hidden = o.t!=='cote';
   bar.hidden=false;
   const wrap=$('#cwrap'), half=bar.offsetWidth/2, cr=cv.getBoundingClientRect(), wrr=wrap.getBoundingClientRect();
-  let left = cr.left - wrr.left + ((x0+x1)/2)/s, top = cr.top - wrr.top + y0/s - 10;
+  let left = cr.left - wrr.left + ((x0+x1)/2 - E.view.ox)/s, top = cr.top - wrr.top + (y0 - E.view.oy)/s - 10;
   left = Math.max(half+4, Math.min(wrap.clientWidth-half-4, left));
   bar.style.left = left+'px'; bar.style.top = Math.max(bar.offsetHeight+18, top)+'px';
 }
@@ -1286,18 +1306,29 @@ async function saveSheet(){
   clearTimeout(E.t); const m=E.m; if(!m || !E.dirty || SYNC.role==='viewer') return; E.dirty=false;
   const ops = E.ops;
   if(!m.id && !ops.length) return;
-  const W=m.w||1600, H=m.h||1150, out=document.createElement('canvas'); out.width=W; out.height=H;
-  render(out.getContext('2d'), W, H, m.kind==='photo'?E.base:null, ops, m.k ?? kOf(W,H));
-  m.data = out.toDataURL('image/jpeg', 0.86); m.ops = ops; m.w=W; m.h=H;
+  m.data = sheetImage(m, ops); m.ops = ops;
   if(!m.id){ m.id=uid(); m.created=Date.now(); S.media.push(m); }
   await DB.put('media', m);
   if(S.cur && m.chantierId===S.cur.id){ touch(); renderStrip(); if(m.kind==='photo') renderGallery(); }
 }
+/* Image de la feuille (vignette, rapport, PDF) : tout ce qui est dessiné, avec une marge */
+function sheetImage(m, ops){
+  const k = m.k ?? kOf(m.w||1600, m.h||1150);
+  const [x0, y0, x1, y1] = contentRect(ops, k, m, 80);
+  const W = x1-x0, H = y1-y0, f = Math.min(1, 3200/Math.max(W, H));
+  const out = document.createElement('canvas'); out.width = Math.round(W*f); out.height = Math.round(H*f);
+  const c = out.getContext('2d');
+  c.setTransform(f, 0, 0, f, -x0*f, -y0*f);
+  if(m.kind === 'photo'){ c.fillStyle='#fff'; c.fillRect(x0,y0,W,H); if(E.base) c.drawImage(E.base, 0, 0, m.w, m.h); }
+  else grid(c, x0, y0, x1, y1, f);
+  resolveCotes(ops, k); ops.forEach(o => drawOp(c, o, k));
+  return out.toDataURL('image/jpeg', 0.86);
+}
 async function flushDrawing(discard){ if(discard){ E.dirty=false; clearTimeout(E.t); } else await saveSheet(); }
 
 function bindCanvas(cv){
-  const pt = e => { const r=cv.getBoundingClientRect(); return [ (e.clientX-r.left)*cv.width/r.width, (e.clientY-r.top)*cv.height/r.height ]; };
-  const R = () => 22*scrScale(cv);
+  const pt = e => { const r=cv.getBoundingClientRect(), d=DPR(), V=E.view; return [ V.ox + (e.clientX-r.left)*d/V.s, V.oy + (e.clientY-r.top)*d/V.s ]; };
+  const R = () => 22*scrScale();
   const dist = (p,q) => Math.hypot(p[0]-q[0], p[1]-q[1]);
   const distSeg = (p,a,b) => { const dx=b[0]-a[0], dy=b[1]-a[1], L=dx*dx+dy*dy; let t=L?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(p[0]-a[0]-t*dx, p[1]-a[1]-t*dy); };
   const hit = p => {
@@ -1337,7 +1368,7 @@ function bindCanvas(cv){
     }
     const L = Math.hypot(q[0]-a[0], q[1]-a[1]); if(L < 1) return q;
     const skip = new Set([...(excl||[])].map(k => +String(k).slice(0,-1)));
-    const tol = Math.max(14*scrScale(cv), L*0.03);
+    const tol = Math.max(14*scrScale(), L*0.03);
     let best=null, bd=tol;
     E.ops.forEach((o,i) => {
       if(o.t!=='line' || skip.has(i)) return;
@@ -1388,7 +1419,7 @@ function bindCanvas(cv){
   const spread = () => { const a=[...G.pts.values()]; return a.length<2 ? 0 : Math.hypot(a[0][0]-a[1][0], a[0][1]-a[1][1]); };
   const gBegin = () => {
     if(st){ if(st.mode!=='draw') E.ops = st.base; E.cur=null; st=null; active=null; E.guide=null; E.match=null; commit(); }
-    G.on=true; G.lock=true; G.s={c:centroid(), d:spread(), v:{...E.view}};
+    G.on=true; G.lock=true; G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
   cv.addEventListener('pointerdown', e => {
     if(e.pointerType!=='touch') return;
@@ -1399,23 +1430,22 @@ function bindCanvas(cv){
     if(!G.pts.has(e.pointerId)) return;
     G.pts.set(e.pointerId, [e.clientX, e.clientY]);
     if(!G.on) return;
-    const c=centroid(), d=spread(), s0=G.s, r=$('#cstage').getBoundingClientRect();
-    const z = Math.min(5, Math.max(E.fit.zMin, s0.d && d ? s0.v.z * d/s0.d : s0.v.z));
-    const px=s0.c[0]-r.left, py=s0.c[1]-r.top, qx=(px-s0.v.x)/s0.v.z, qy=(py-s0.v.y)/s0.v.z;   // point de la feuille sous les doigts
-    setView(z, c[0]-r.left - qx*z, c[1]-r.top - qy*z);
+    const c=centroid(), d=spread(), s0=G.s, V0=s0.V, r=cv.getBoundingClientRect(), dp=DPR();
+    const s = clampS(s0.d && d ? V0.s * d/s0.d : V0.s);
+    const wx = V0.ox + (s0.c[0]-r.left)*dp/V0.s, wy = V0.oy + (s0.c[1]-r.top)*dp/V0.s;   // point de la feuille sous les doigts
+    setView(s, wx - (c[0]-r.left)*dp/s, wy - (c[1]-r.top)*dp/s);
   });
   const gEnd = e => {
     if(!G.pts.delete(e.pointerId)) return;
     if(G.pts.size===0){ G.on=false; G.lock=false; }
-    else if(G.on) G.s={c:centroid(), d:spread(), v:{...E.view}};
+    else if(G.on) G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
   cv.addEventListener('pointerup', gEnd); cv.addEventListener('pointercancel', gEnd);
   cv.addEventListener('wheel', e => {
     if(e.ctrlKey){ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
-    else {
-      const st=$('#cstage'), ox = E.fit.w*E.view.z > st.clientWidth+1, oy = E.fit.h*E.view.z > st.clientHeight+1;
-      const dx = ox ? e.deltaX : 0, dy = oy ? e.deltaY : 0;
-      if((dx && Math.abs(e.deltaX)>=Math.abs(e.deltaY)) || (dy && Math.abs(e.deltaY)>Math.abs(e.deltaX))){ e.preventDefault(); setView(E.view.z, E.view.x - dx, E.view.y - dy); }
+    else if($('#drawSec').classList.contains('full') || e.shiftKey){     // molette : déplace la feuille (plein écran)
+      e.preventDefault(); const V=E.view, dp=DPR();
+      setView(V.s, V.ox + e.deltaX*dp/V.s, V.oy + e.deltaY*dp/V.s);
     }
   }, {passive:false});
 
@@ -1440,7 +1470,7 @@ function bindCanvas(cv){
       }
       if(E.tool==='edit' && hit(p)===E.sel){ Object.assign(st,{mode:'move', i:E.sel, from:p}); $('#selbar').hidden=true; return; }
     }
-    if(E.tool==='edit'){ const i=hit(p); setSel(i); if(i>=0){ Object.assign(st,{mode:'move', i, from:p}); $('#selbar').hidden=true; } else st=null; return; }
+    if(E.tool==='edit'){ const i=hit(p); setSel(i); if(i>=0){ Object.assign(st,{mode:'move', i, from:p}); $('#selbar').hidden=true; } else Object.assign(st,{mode:'pan', V:{...E.view}}); return; }
     if(E.sel!=null) setSel(null);
     if(E.tool==='erase'){ st=null; const i=hit(p); if(i>=0) pushOps(withoutOp(E.ops, i)); return; }
     if(E.tool==='text'){ st=null; active=null; askText('Texte à placer', txt => pushOps([...E.ops, {t:'text', c:E.color, w:E.w, at:p, txt, size:38}])); return; }
@@ -1468,6 +1498,9 @@ function bindCanvas(cv){
       const q = snapEnd(st.fixed, p, st.excl);
       E.ops = st.base.map((o,i)=>{ const ends=st.owners.filter(w=>w.i===i); if(!ends.length) return o; const n={...o}; ends.forEach(w=>{ n[w.end]=q.slice(); }); return n; });
       commit();
+    } else if(st.mode==='pan'){
+      const V=st.V, dp=DPR();
+      setView(V.s, V.ox - (e.clientX-st.down[0])*dp/V.s, V.oy - (e.clientY-st.down[1])*dp/V.s);
     } else if(st.mode==='move'){
       const d=[p[0]-st.from[0], p[1]-st.from[1]];
       E.ops = st.base.map((o,i)=> i===st.i ? tr(o,d) : o);
@@ -1477,6 +1510,7 @@ function bindCanvas(cv){
   const end = e => {
     if(e.pointerId!==active) return; active=null;
     const s0=st; st=null; E.guide=null; E.match=null; if(!s0) return;
+    if(s0.mode==='pan') return;
     if(s0.mode==='draw'){
       const o=E.cur; E.cur=null; if(!o) return;
       if(o.t==='pen'){ pushOps([...E.ops, o]); return; }
