@@ -30,7 +30,7 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
 - Le dossier d'exemple (M. Hoarau) n'est jamais envoyé au serveur.
 - iPad : cases de texte verrouillées tant qu'on ne les touche pas (bloque l'écriture manuscrite du Pencil),
   pavé numérique maison pour téléphone, code postal et mesures en mm.
-- Dessin : traits éditables, aimants (sommets, horizontal/vertical/45° à 5° près, même longueur), bouton « Dupliquer la feuille » (copie traits/cotes, nouvelles id + refs de cotes remappées), cotes posées en touchant un trait,
+- Dessin : traits éditables, aimants (sommets, horizontal/vertical/45° à 5° près, même longueur), bouton « Dupliquer la feuille » (copie traits/cotes, nouvelles id + refs de cotes remappées), cotes posées en touchant un trait (glisser une cote, outil Cote ou Modifier, change seulement sa distance au trait : side/off),
   feuille infinie (vue E.view = échelle s + coin ox/oy, canevas à la taille du cadre redessiné à chaque zoom/déplacement ;
   zoom 20 % à 600 % du cadrage « 100 % » = tout le dessin ; 2 doigts, outil Modifier dans le vide, molette en plein écran),
   image enregistrée = feuille de départ (m.w × m.h) + tout le dessin avec marge (sheetImage), échelle des traits fixe m.k.
