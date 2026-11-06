@@ -900,7 +900,8 @@ function renderContact(){
   box.innerHTML = `
     ${tel?`<a class="btn sm" href="tel:${tel}">Appeler</a>`:''}
     ${c.email?`<a class="btn sm" href="mailto:${esc(c.email)}">Écrire un e-mail</a>`:''}
-    ${fullAdr(c)?`<a class="btn sm" href="https://maps.apple.com/?q=${encodeURIComponent(fullAdr(c))}" target="_blank" rel="noopener">Itinéraire</a>`:''}
+    ${c.geo?`<a class="btn sm" href="https://maps.apple.com/?ll=${c.geo.lat},${c.geo.lng}&q=${encodeURIComponent(fullName(c)||'Chantier')}&z=19&t=k" target="_blank" rel="noopener">Ouvrir la carte</a>`
+      : fullAdr(c)?`<a class="btn sm" href="https://maps.apple.com/?address=${encodeURIComponent(fullAdr(c))}&z=17" target="_blank" rel="noopener">Ouvrir la carte</a>`:''}
     <button class="btn sm" type="button" id="geoBtn">${c.geo?`Position GPS ✓ <span class="num">${c.geo.lat}, ${c.geo.lng}</span>`:'Enregistrer la position GPS'}</button>`;
   $('#geoBtn').onclick = () => {
     if(!navigator.geolocation){ toast('Position indisponible ici'); return; }
