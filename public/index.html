@@ -372,7 +372,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
     <label><input type="radio" name="role" value="tablette"><b>Tablette principale</b><span>Garde tous les dossiers et les envoie sur le serveur dès qu’il y a du réseau.</span></label>
     <label><input type="radio" name="role" value="viewer"><b>Consultation</b><span>Mac ou PC du bureau : affiche les dossiers de la tablette, sans modifier.</span></label>
   </div>
-  <div class="f"><label for="setToken">Code d’accès du serveur</label><input id="setToken" type="password" autocomplete="off" placeholder="Le même sur tous les appareils"></div>
+  <div class="f"><label for="setToken">Code d’accès du serveur</label><div style="display:flex;gap:8px"><input id="setToken" type="password" autocomplete="off" placeholder="Le même sur tous les appareils" style="flex:1;min-width:0"><button class="btn sm" type="button" id="setShow" style="min-height:46px">Afficher</button></div></div>
   <p class="note" id="setMsg"></p>
   <div class="foot">
     <button class="btn" type="button" id="setPushAll">Tout renvoyer</button>
@@ -504,7 +504,8 @@ function openSettings(){
   $('#setPushAll').hidden = SYNC.role!=='tablette';
 }
 $('#syncBtn').onclick = openSettings;
-$('#setCancel').onclick = () => $('#settings').hidden = true;
+$('#setCancel').onclick = () => { $('#settings').hidden = true; $('#setToken').type='password'; $('#setShow').textContent='Afficher'; };
+$('#setShow').onclick = () => { const i=$('#setToken'), on=i.type==='password'; i.type = on ? 'text' : 'password'; $('#setShow').textContent = on ? 'Masquer' : 'Afficher'; };
 $('#settings').onclick = e => { if(e.target.id==='settings') $('#settings').hidden=true; };
 $('#setTest').onclick = async () => {
   const keep=SYNC.token; SYNC.token=$('#setToken').value.trim(); $('#setMsg').textContent='Test en cours…';
