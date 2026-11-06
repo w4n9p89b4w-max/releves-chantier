@@ -1883,8 +1883,10 @@ async function exportZip(c){
     const zip = new JSZip(), used = new Set();
     const uniq = (dir, name, ext) => { let b=`${dir}/${name}`, f=b+ext, i=2; while(used.has(f.toLowerCase())) f=`${b} (${i++})${ext}`; used.add(f.toLowerCase()); return f; };
     const add = (path, data) => zip.file(path, data.slice(data.indexOf(',')+1), {base64:true});
-    const base = slug(fullName(c)) + (c.date ? '-'+c.date : '');
-    zip.file(`rapport-${base}.pdf`, await reportPDF(c, media));
+    /* Nom du fichier : « Nom Prénom - Toiture - Portail-clôture - Tôle perforée » */
+    const TYPES = [['toiture','Toiture'],['portail','Portail-clôture'],['perforee','Tôle perforée']];
+    const base = [fileSafe([c.nom, c.prenom].filter(Boolean).join(' ') || fullName(c)) || 'Chantier', ...TYPES.filter(([k])=>c.types.includes(k)).map(([,l])=>l)].join(' - ');
+    zip.file(`Rapport ${base}.pdf`, await reportPDF(c, media));
     let np=0, nc=0;
     for(const m of media){
       const ext = /^data:image\/png/.test(m.data) ? '.png' : /^data:image\/jpe?g/.test(m.data) ? '.jpg' : '';
@@ -1894,7 +1896,7 @@ async function exportZip(c){
       else if(m.kind==='fichier'){ const nm=fileSafe(m.name)||'fichier', i=nm.lastIndexOf('.'); add(uniq('fichiers', i>0?nm.slice(0,i):nm, i>0?nm.slice(i):''), m.data); }
     }
     const blob = await zip.generateAsync({type:'blob', compression:'STORE'});
-    const name = `releve-${base}.zip`, file = new File([blob], name, {type:'application/zip'});
+    const name = `${base}.zip`, file = new File([blob], name, {type:'application/zip'});
     if(TOUCH && navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file], title:name}); return; }catch(e){ if(e.name==='AbortError') return; } }
     const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
