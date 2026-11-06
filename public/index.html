@@ -1460,8 +1460,9 @@ function bindCanvas(cv){
     }, () => { E.cur=null; paint(); }, '', true);
   };
   let active=null, st=null;
-  /* Gestes : 2 doigts = zoom + déplacement ; en « Pencil seul », 1 doigt déplace la feuille zoomée */
-  const G = {pts:new Map(), on:false, lock:false, s:null};
+  /* Gestes : 2 doigts = zoom + déplacement ; en « Pencil seul », 1 doigt déplace la feuille zoomée ;
+     tape rapide à 2 doigts (sans bouger) = annuler */
+  const G = {pts:new Map(), on:false, lock:false, s:null, tap:null};
   const centroid = () => { const a=[...G.pts.values()]; return [a.reduce((t,p)=>t+p[0],0)/a.length, a.reduce((t,p)=>t+p[1],0)/a.length]; };
   const spread = () => { const a=[...G.pts.values()]; return a.length<2 ? 0 : Math.hypot(a[0][0]-a[1][0], a[0][1]-a[1][1]); };
   const gBegin = () => {
@@ -1471,11 +1472,14 @@ function bindCanvas(cv){
   cv.addEventListener('pointerdown', e => {
     if(e.pointerType!=='touch') return;
     G.pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if(G.pts.size===1) G.tap = {t:Date.now(), start:new Map(), ok:true, max:0};
+    if(G.tap){ G.tap.start.set(e.pointerId, [e.clientX, e.clientY]); G.tap.max = Math.max(G.tap.max, G.pts.size); }
     if(G.pts.size>=2 || (E.pencilOnly && G.pts.size===1)){ e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch{} gBegin(); }
   });
   cv.addEventListener('pointermove', e => {
     if(!G.pts.has(e.pointerId)) return;
     G.pts.set(e.pointerId, [e.clientX, e.clientY]);
+    const p0 = G.tap?.start.get(e.pointerId); if(p0 && Math.hypot(e.clientX-p0[0], e.clientY-p0[1]) > 14) G.tap.ok = false;
     if(!G.on) return;
     const c=centroid(), d=spread(), s0=G.s, V0=s0.V, r=cv.getBoundingClientRect(), dp=DPR();
     const s = clampS(s0.d && d ? V0.s * d/s0.d : V0.s);
@@ -1484,7 +1488,11 @@ function bindCanvas(cv){
   });
   const gEnd = e => {
     if(!G.pts.delete(e.pointerId)) return;
-    if(G.pts.size===0){ G.on=false; G.lock=false; }
+    if(G.pts.size===0){
+      G.on=false; G.lock=false;
+      const t = G.tap; G.tap = null;
+      if(t && t.ok && t.max===2 && Date.now()-t.t < 350 && e.type==='pointerup' && E.undo.length){ $('#edUndo').click(); toast('Annulé'); }
+    }
     else if(G.on) G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
   cv.addEventListener('pointerup', gEnd); cv.addEventListener('pointercancel', gEnd);
