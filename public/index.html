@@ -993,6 +993,7 @@ function drawHTML(){
   </div>
   <div class="sheetbar">
     <input id="edTitle" placeholder="Titre de la feuille" aria-label="Titre de la feuille">
+    <button class="btn sm" type="button" id="edDup">Dupliquer la feuille</button>
     <button class="btn sm" type="button" id="edClear">Tout effacer</button>
     <button class="btn sm danger" type="button" id="edDel">Supprimer la feuille</button>
   </div>
@@ -1035,6 +1036,24 @@ function mountDrawing(){
   $('#edUndo').onclick = () => { setSel(null); if(!E.undo.length) return; E.redo.push(E.ops); E.ops=E.undo.pop(); changed(); };
   $('#edRedo').onclick = () => { setSel(null); if(!E.redo.length) return; E.undo.push(E.ops); E.ops=E.redo.pop(); changed(); };
   $('#edClear').onclick = () => { setSel(null); if(E.ops.length) pushOps([]); };
+  /* Dupliquer : nouvelle feuille avec le même dessin (traits, cotes, textes), modifiable à part */
+  $('#edDup').onclick = async () => {
+    setSel(null); await saveSheet();
+    const src = E.m; if(!src) return;
+    if(!src.id && !E.ops.length){ toast('La feuille est vide'); return; }
+    const ids = {};
+    const ops = JSON.parse(JSON.stringify(E.ops)).map(o => { if(o.id){ ids[o.id] = uid(); o.id = ids[o.id]; } delete o.orphan; return o; });
+    ops.forEach(o => { if(o.ref && ids[o.ref]) o.ref = ids[o.ref]; });
+    const base = (src.legende || (src.kind==='photo' ? 'Photo' : 'Croquis')).replace(/ \(copie( \d+)?\)$/, '');
+    const n = S.media.filter(x => x.kind===src.kind && (x.legende||'').startsWith(base+' (copie')).length;
+    const m = {id:uid(), chantierId:S.cur.id, kind:src.kind, legende: base + (n ? ` (copie ${n+1})` : ' (copie)'),
+      ops, w:src.w||$('#cv').width, h:src.h||$('#cv').height, data:src.data, created:Date.now()};
+    if(src.k !== undefined) m.k = src.k;
+    if(src.kind==='photo') m.base = src.base;
+    S.media.push(m); await DB.put('media', m); touch();
+    loadSheet(m); if(m.kind==='photo') renderGallery();
+    toast('Feuille dupliquée');
+  };
   $('#edFull').onclick = () => { const on = sec.classList.toggle('full'); $('#edFullLbl').textContent = on ? 'Réduire' : 'Plein écran'; document.body.style.overflow = on ? 'hidden' : ''; E.view.center=true; E.view.z=1; fit(); paint(); };
   $('#zIn').onclick = () => zoomAt(1.5); $('#zOut').onclick = () => zoomAt(1/1.5); $('#zReset').onclick = () => centerView(1);
   $('#edTitle').oninput = e => { if(!E.m) return; E.m.legende = e.target.value; E.dirty=true; scheduleSave(); };
@@ -1221,7 +1240,8 @@ function overlay(x, cv){
   const s=scrScale(cv), k=curK();
   const dot = (p, r, fill) => { x.beginPath(); x.arc(p[0],p[1],r,0,7); x.fillStyle=fill; x.fill(); x.lineWidth=2*s; x.strokeStyle='#1d5ca8'; x.stroke(); };
   if(E.guide){ x.save(); x.setLineDash([8*s,6*s]); x.lineWidth=1.5*s; x.strokeStyle='#1d5ca8';
-    const g=E.guide; if(g.a[1]===g.b[1]){ x.beginPath(); x.moveTo(0,g.a[1]); x.lineTo(cv.width,g.a[1]); x.stroke(); } else { x.beginPath(); x.moveTo(g.a[0],0); x.lineTo(g.a[0],cv.height); x.stroke(); } x.restore(); }
+    const g=E.guide, D=cv.width+cv.height, u=g.u||[1,0];
+    x.beginPath(); x.moveTo(g.a[0]-u[0]*D, g.a[1]-u[1]*D); x.lineTo(g.a[0]+u[0]*D, g.a[1]+u[1]*D); x.stroke(); x.restore(); }
   if(E.match && E.ops[E.match.i]){
     const tag = (A, B) => {       // trait surligné + double barre « = » au milieu (longueurs égales)
       x.save(); x.lineCap='round';
@@ -1309,8 +1329,11 @@ function bindCanvas(cv){
     let q = p;
     const dx=p[0]-a[0], dy=p[1]-a[1];
     if(Math.hypot(dx,dy)>0){
-      const ang=Math.atan2(dy,dx)*180/Math.PI, near=Math.round(ang/90)*90;
-      if(Math.abs(ang-near)<5){ q = (near%180===0) ? [p[0], a[1]] : [a[0], p[1]]; E.guide={a:a.slice(), b:q}; }
+      const ang=Math.atan2(dy,dx)*180/Math.PI, near=Math.round(ang/45)*45;      // horizontal, vertical et 45°
+      if(Math.abs(ang-near)<5){
+        const r=near*Math.PI/180, ux=Math.round(Math.cos(r)*1e9)/1e9, uy=Math.round(Math.sin(r)*1e9)/1e9, L=dx*ux+dy*uy;
+        q=[a[0]+ux*L, a[1]+uy*L]; E.guide={a:a.slice(), b:q, u:[ux,uy]};
+      }
     }
     const L = Math.hypot(q[0]-a[0], q[1]-a[1]); if(L < 1) return q;
     const skip = new Set([...(excl||[])].map(k => +String(k).slice(0,-1)));
