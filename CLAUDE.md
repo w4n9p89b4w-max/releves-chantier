@@ -26,7 +26,8 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
 
 ## Points importants
 - Rôles (Réglages de l'appli, bas de la colonne) : « Tablette principale » envoie chaque modification au serveur
-  (file d'attente hors ligne `outbox` dans IndexedDB) ; « Consultation » lit le serveur, rien n'est modifiable.
+  (file d'attente hors ligne `outbox` dans IndexedDB) ; « Consultation » lit le serveur, rien n'est modifiable sauf l'ajout de photos/fichiers :
+  envoyés directement au serveur (PUT /media/:id, champ ajoutBureau), la tablette les récupère (Sync.pull via GET /media-ids puis GET /media/:id, après chaque envoi réussi et à l'ouverture d'un dossier).
 - Le dossier d'exemple (M. Hoarau) n'est jamais envoyé au serveur.
 - iPad : cases de texte verrouillées tant qu'on ne les touche pas (bloque l'écriture manuscrite du Pencil),
   pavé numérique maison pour téléphone, code postal et mesures en mm.
@@ -34,4 +35,4 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
   feuille infinie (vue E.view = échelle s + coin ox/oy, canevas à la taille du cadre redessiné à chaque zoom/déplacement ;
   zoom 20 % à 600 % du cadrage « 100 % » = tout le dessin ; 2 doigts, outil Modifier dans le vide, molette en plein écran),
   image enregistrée = feuille de départ (m.w × m.h) + tout le dessin avec marge (sheetImage), échelle des traits fixe m.k.
-- Exports : PDF (impression A4), JSON (réimportable), étiquette contact 62 × 60 mm, projet calepinage (.json au format « calepinage-toiture » v2 : fiche chantier remplie, pans vides ; ville = « ville code postal », tôle = produit + couleur ; ouvert par « Ouvrir (.json) » du calepinage G:\OneDrive\Bureau\teste calepinage\calepinage.html).
+- Exports : « Tout exporter (.zip) » (rapport PDF fait avec jsPDF + dossiers photos/, croquis/, fichiers/ ; bibliothèques dans public/lib, chargées à la demande et mises en cache par sw.js ; police standard → texte nettoyé par pdfTxt), PDF (impression A4), JSON (réimportable), étiquette contact 62 × 60 mm, projet calepinage (.json au format « calepinage-toiture » v2 : fiche chantier remplie, pans vides ; ville = « ville code postal », tôle = produit + couleur ; ouvert par « Ouvrir (.json) » du calepinage G:\OneDrive\Bureau\teste calepinage\calepinage.html).

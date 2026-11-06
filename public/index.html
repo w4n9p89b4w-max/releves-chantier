@@ -51,7 +51,7 @@ h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;margi
 .syncdot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
 .syncdot.ok{background:var(--ok)} .syncdot.wait{background:var(--warn)} .syncdot.err{background:var(--danger)}
 .viewbanner{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:10px}
-body.viewer #newBtn, body.viewer .tb, body.viewer .sheetbar .btn, body.viewer .drop, body.viewer [data-del], body.viewer [data-annot],
+body.viewer #newBtn, body.viewer .tb, body.viewer .sheetbar .btn, body.viewer [data-del], body.viewer [data-annot],
 body.viewer #delChantier, body.viewer .quick, body.viewer [data-addpan], body.viewer [data-delpan], body.viewer #geoBtn,
 body.viewer .strip .add, body.viewer .ck:has(input:not(:checked)), body.viewer #restoreLbl, body.viewer #exportAll, body.viewer .typepick label:has(input:not(:checked)){display:none!important}
 body.viewer #cv{pointer-events:none}
@@ -356,6 +356,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
   <div class="box" role="dialog" aria-modal="true" aria-labelledby="expTitle" style="background:var(--surface);border-radius:16px;width:min(520px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <h3 id="expTitle" style="font-size:26px">Exporter le dossier</h3>
     <div class="exp-list">
+      <button type="button" data-exp="zip"><b>Tout exporter (.zip)</b><span>Un seul fichier : le rapport en PDF + toutes les photos, les croquis et les fichiers joints, rangés dans des dossiers.</span></button>
       <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
       <button type="button" data-exp="json"><b>Fichier JSON</b><span>Copie complète du dossier (avec photos et croquis), réimportable avec « Restaurer ».</span></button>
       <button type="button" data-exp="calepinage"><b>Projet calepinage (.json)</b><span>Fiche chantier prête pour le calepinage : nom, prénom, adresse, ville / code postal, téléphone, mail, tôle et pliages. Dans le calepinage : « Ouvrir (.json) ».</span></button>
@@ -466,8 +467,30 @@ const Sync = {
       SYNC.last=Date.now(); try{ localStorage.setItem('rc-last', SYNC.last); }catch{}
       SYNC.state='ok';
       if((await DB.all('outbox')).length) this.schedule(500);
+      else if(Date.now()-(SYNC.pulled||0) > 90000) this.pull();
     }catch(e){ SYNC.state = e.auth ? 'auth' : 'err'; SYNC.error = e.message; this.schedule(60000); }
     finally{ SYNC.busy=false; this.refreshStatus(); }
+  },
+  /* Tablette : récupère les photos et fichiers ajoutés depuis le Mac/PC (consultation) */
+  async pull(){
+    if(SYNC.role!=='tablette' || !SYNC.token || !navigator.onLine || SYNC.pulling) return;
+    SYNC.pulling = true; SYNC.pulled = Date.now();
+    try{
+      const ids = await this.api('GET', '/media-ids');
+      const have = new Set((await DB.all('media')).map(m=>m.id));
+      const out = new Set((await DB.all('outbox')).map(o=>o.id));
+      const known = new Set(S.list.filter(c=>!c.exemple).map(c=>c.id));
+      let n = 0;
+      for(const r of ids){
+        if(have.has(r.id) || out.has('media:'+r.id) || !known.has(r.chantierId)) continue;
+        const m = await this.api('GET', '/media/'+encodeURIComponent(r.id));
+        if(!m || m.id!==r.id) continue;
+        await DB.rawPut('media', m); n++;
+        if(S.cur?.id===m.chantierId && !S.media.some(x=>x.id===m.id)){ S.media.push(m); S.media.sort((a,b)=>a.created-b.created); renderGallery(); renderStrip(); }
+      }
+      if(n){ toast(n>1 ? `${n} photos/fichiers reçus du bureau` : '1 photo/fichier reçu du bureau'); storeInfo(); }
+    }catch{}
+    finally{ SYNC.pulling = false; }
   },
   async pushAll(){
     for(const c of await DB.all('chantiers')) if(!c.exemple) await DB.rawPut('outbox', {id:'chantiers:'+c.id, st:'chantiers', rid:c.id, op:'put', t:Date.now()+Math.random()});
@@ -635,6 +658,7 @@ async function openChantier(id){
   } else {
     const all = await DB.all('media');
     S.media = all.filter(m=>m.chantierId===id).sort((a,b)=>a.created-b.created);
+    if(Date.now()-(SYNC.pulled||0) > 15000) setTimeout(()=>Sync.pull(), 300);
   }
   $('#app').classList.add('detail'); S.side='client';
   renderList(); renderMain();
@@ -889,16 +913,17 @@ function renderContact(){
 function renderGallery(){
   const g = $('#gallery'); if(!g) return;
   const items = S.media.filter(x=>x.kind==='photo' || x.kind==='fichier');
+  const RO = SYNC.role==='viewer' ? ' readonly' : '';
   g.innerHTML = items.length ? items.map(x => x.kind==='photo' ? `
     <div class="tile" data-id="${x.id}">
       ${x.ops?.length?'<span class="tag">Annotée</span>':''}
       <img src="${x.data}" alt="${esc(x.legende||'Photo')}" data-view loading="lazy">
-      <input value="${esc(x.legende)}" placeholder="Légende…" data-leg aria-label="Légende">
+      <input value="${esc(x.legende)}" placeholder="${RO?'':'Légende…'}" data-leg aria-label="Légende"${RO}>
       <div class="acts"><button class="btn sm" type="button" data-annot>Annoter</button><button class="btn sm danger" type="button" data-del>Supprimer</button></div>
     </div>` : `
     <div class="tile" data-id="${x.id}">
       <div class="doc"><span class="ext">${esc((x.name.split('.').pop()||'?').slice(0,4).toUpperCase())}</span><b>${esc(x.name)}</b><span class="note">${size(x.size||0)}</span></div>
-      <input value="${esc(x.legende)}" placeholder="Note sur le fichier…" data-leg aria-label="Note">
+      <input value="${esc(x.legende)}" placeholder="${RO?'':'Note sur le fichier…'}" data-leg aria-label="Note"${RO}>
       <div class="acts"><button class="btn sm" type="button" data-open>Ouvrir</button><button class="btn sm danger" type="button" data-del>Supprimer</button></div>
     </div>`).join('')
     : `<p class="note" style="grid-column:1/-1;margin:0">Aucune photo ni fichier pour l’instant.</p>`;
@@ -937,17 +962,27 @@ async function shrink(file, max=1800){
     return {data:cv.toDataURL('image/jpeg',0.82), w:cv.width, h:cv.height};
   } finally { URL.revokeObjectURL(url); }
 }
+/* Sur la tablette : enregistré ici puis envoyé. En consultation (Mac/PC) : envoyé directement au serveur,
+   la tablette le récupère ensuite toute seule (Sync.pull). */
+async function saveNewMedia(m, what){
+  if(SYNC.role==='viewer'){
+    try{ await Sync.api('PUT', '/media/'+encodeURIComponent(m.id), {...m, ajoutBureau:true}); }
+    catch(e){ toast(navigator.onLine ? `${what} non envoyé : ${e.message}` : `${what} non envoyé : pas de connexion`); return; }
+  } else await DB.put('media', m);
+  S.media.push(m); touch(); toast(SYNC.role==='viewer' ? `${what} envoyé à la tablette` : `${what} ajouté`);
+}
 async function addFile(file){
   const base = {id:uid(), chantierId:S.cur.id, legende:'', created:Date.now()};
+  let m = null;
   if(file.type.startsWith('image/') && !/svg/.test(file.type)){
-    try{ const r = await shrink(file); const m = {...base, kind:'photo', base:r.data, data:r.data, w:r.w, h:r.h, ops:[]};
-      await DB.put('media', m); S.media.push(m); touch(); toast('Photo ajoutée'); return; }catch{}
+    try{ const r = await shrink(file); m = {...base, kind:'photo', base:r.data, data:r.data, w:r.w, h:r.h, ops:[]}; }catch{}
   }
-  if(file.size > 40*1048576){ toast(`« ${file.name} » dépasse 40 Mo`); return; }
-  try{
-    const m = {...base, kind:'fichier', name:file.name, mime:file.type||'application/octet-stream', size:file.size, data:await readURL(file)};
-    await DB.put('media', m); S.media.push(m); touch(); toast('Fichier ajouté');
-  }catch{ toast(`Impossible de lire « ${file.name} »`); }
+  if(!m){
+    if(file.size > 40*1048576){ toast(`« ${file.name} » dépasse 40 Mo`); return; }
+    try{ m = {...base, kind:'fichier', name:file.name, mime:file.type||'application/octet-stream', size:file.size, data:await readURL(file)}; }
+    catch{ toast(`Impossible de lire « ${file.name} »`); return; }
+  }
+  await saveNewMedia(m, m.kind==='photo' ? 'Photo' : 'Fichier');
 }
 function dataToBlob(d){ const i=d.indexOf(','); const mime=(d.slice(0,i).match(/data:([^;]+)/)||[])[1]||'application/octet-stream'; const bin=atob(d.slice(i+1)); const u=new Uint8Array(bin.length); for(let j=0;j<bin.length;j++) u[j]=bin.charCodeAt(j); return new Blob([u],{type:mime}); }
 function openFile(x){
@@ -1735,6 +1770,7 @@ $('#exportDlg').onclick = async e => {
   if(e.target.id==='exportDlg'){ $('#exportDlg').hidden=true; return; }
   const b = e.target.closest('[data-exp]'); if(!b) return;
   const c = S.cur; $('#exportDlg').hidden = true;
+  if(b.dataset.exp==='zip') exportZip(c);
   if(b.dataset.exp==='pdf'){ openReport(); printWith('pdf'); }
   if(b.dataset.exp==='json') download([c], S.media, `releve-${slug(fullName(c))}-${c.date||''}.json`);
   if(b.dataset.exp==='calepinage') exportCalepinage(c);
@@ -1765,6 +1801,85 @@ function exportCalepinage(c){
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
   toast(inFrame ? 'Le téléchargement marche dans l\u2019appli installée' : 'Projet calepinage enregistré');
+}
+/* ---------- Tout exporter : un .zip avec rapport PDF + photos + croquis + fichiers ---------- */
+const libs = {};
+function loadLib(src){
+  return libs[src] ||= new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>{ delete libs[src]; rej(new Error('Module d’export introuvable (connectez-vous une fois à Internet)')); }; document.head.appendChild(s); });
+}
+const pdfTxt = v => String(v??'').replace(/[‘’ʼ]/g,"'").replace(/[“”«»]/g,'"').replace(/[–—]/g,'-').replace(/…/g,'...').replace(/×/g,'x')
+  .replace(/œ/g,'oe').replace(/Œ/g,'OE').replace(/€/g,'EUR').replace(/[\u00a0\u202f]/g,' ').replace(/[^\n\x20-\x7e\xa0-\xff]/g,'');
+const imgDims = d => new Promise(res=>{ const i=new Image(); i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight}); i.onerror=()=>res(null); i.src=d; });
+const fileSafe = s => (s||'').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60);
+async function reportPDF(c, media){
+  const {jsPDF} = window.jspdf, doc = new jsPDF({unit:'mm', format:'a4'});
+  const W=210, H=297, M=15, CW=W-2*M; let y=M;
+  const need = h => { if(y+h > H-14){ doc.addPage(); y=M; } };
+  const text = (t, x, size=10, style='normal', color=[26,34,38]) => { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...color); doc.text(pdfTxt(t), x, y); };
+  const section = (t, keep=0) => { need(14+keep); y+=5; text(t, M, 12.5, 'bold', [29,92,168]); y+=2; doc.setDrawColor(29,92,168); doc.setLineWidth(.4); doc.line(M, y, W-M, y); y+=6; };
+  const rows = pairs => pairs.filter(([,v])=>v!==''&&v!=null&&v!==false).forEach(([k,v])=>{
+    const lines = doc.setFont('helvetica','normal').setFontSize(10).splitTextToSize(pdfTxt(v===true?'Oui':v), CW-52);
+    need(lines.length*4.6+1.5); text(k, M, 9.5, 'normal', [90,104,112]); doc.setFontSize(10).setTextColor(26,34,38); doc.text(lines, M+52, y); y += lines.length*4.6+1.6;
+  });
+  const para = t => { doc.setFont('helvetica','normal').setFontSize(10).setTextColor(26,34,38); for(const l of doc.splitTextToSize(pdfTxt(t), CW)){ need(5); doc.text(l, M, y); y+=4.8; } };
+  const images = async (list, title) => {
+    let first = true;
+    for(const m of list){
+      const d = (m.w&&m.h) ? {w:m.w,h:m.h} : await imgDims(m.data); if(!d) continue;
+      const maxH = m.kind==='croquis' ? 170 : 115; let w=CW, h=w*d.h/d.w; if(h>maxH){ h=maxH; w=h*d.w/d.h; }
+      const cap = m.legende ? doc.setFontSize(9).splitTextToSize(pdfTxt(m.legende), CW) : [];
+      if(first){ section(title, h + cap.length*4.2 + 6); first = false; } else need(h + cap.length*4.2 + 6);
+      const fmt = /^data:image\/png/.test(m.data) ? 'PNG' : 'JPEG';
+      try{ doc.addImage(m.data, fmt, M+(CW-w)/2, y, w, h, undefined, 'FAST'); }catch{ continue; }
+      doc.setDrawColor(210,216,220); doc.setLineWidth(.2); doc.rect(M+(CW-w)/2, y, w, h); y += h+4;
+      if(cap.length){ doc.setFont('helvetica','italic').setFontSize(9).setTextColor(90,104,112); doc.text(cap, W/2, y, {align:'center'}); y += cap.length*4.2; }
+      y += 4;
+    }
+  };
+  const photos=media.filter(m=>m.kind==='photo'), cr=media.filter(m=>m.kind==='croquis'), files=media.filter(m=>m.kind==='fichier');
+  y += 4; text(fullName(c)||'Sans nom', M, 20, 'bold'); y += 7;
+  text(`Relevé de chantier · visite du ${c.date?new Date(c.date).toLocaleDateString('fr-FR',{dateStyle:'long'}):'-'} · EcoTole`, M, 10, 'normal', [90,104,112]); y += 4;
+  section('Client');
+  rows([['Nom',c.nom],['Prénom',c.prenom],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']]);
+  if(c.notes){ section('Remarques'); para(c.notes); }
+  if(c.types.includes('toiture')){ const t=c.toiture; section('Toiture');
+    rows([['Couverture existante',listVal(t.existante)],['État',listVal(t.etat)],['Charpente',listVal(t.charpente)],['Isolation',listVal(t.isolation)],['Accès',t.acces],['Produit proposé',listVal(t.produit)],['Couleur',listVal(t.couleur)]]); }
+  if(c.types.includes('portail')){ const p=c.portail; section('Portail et clôture');
+    rows([['Type',listVal(p.type)],['Ouverture (vu de l’extérieur)',listVal(p.sens)],['Remplissage',listVal(p.remplissage)],['Passage entre piliers',p.largeur&&p.largeur+' mm'],['Hauteur',p.hauteur&&p.hauteur+' mm'],['Hauteur piliers',p.hPiliers&&p.hPiliers+' mm'],['Refoulement',p.refoulement&&p.refoulement+' mm'],['Teinte',p.ral]]); }
+  if(cr.length) await images(cr, 'Croquis');
+  if(photos.length) await images(photos, 'Photos');
+  if(files.length){ section('Fichiers joints (dossier "fichiers" du zip)'); for(const f of files){ need(6); para('- '+f.name+(f.legende?' - '+f.legende:'')); } }
+  const n = doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont('helvetica','normal').setFontSize(8).setTextColor(140,150,156);
+    doc.text(pdfTxt(`${fullName(c)||''} · page ${i}/${n}`), W-M, H-8, {align:'right'}); }
+  return doc.output('blob');
+}
+async function exportZip(c){
+  if(inFrame){ toast('Le téléchargement marche dans l’appli installée'); }
+  toast('Préparation du zip…');
+  try{
+    await Promise.all([loadLib('lib/jspdf.umd.min.js'), loadLib('lib/jszip.min.js')]);
+    const media = S.media.filter(m=>m.chantierId===c.id).sort((a,b)=>a.created-b.created);
+    const zip = new JSZip(), used = new Set();
+    const uniq = (dir, name, ext) => { let b=`${dir}/${name}`, f=b+ext, i=2; while(used.has(f.toLowerCase())) f=`${b} (${i++})${ext}`; used.add(f.toLowerCase()); return f; };
+    const add = (path, data) => zip.file(path, data.slice(data.indexOf(',')+1), {base64:true});
+    const base = slug(fullName(c)) + (c.date ? '-'+c.date : '');
+    zip.file(`rapport-${base}.pdf`, await reportPDF(c, media));
+    let np=0, nc=0;
+    for(const m of media){
+      const ext = /^data:image\/png/.test(m.data) ? '.png' : /^data:image\/jpe?g/.test(m.data) ? '.jpg' : '';
+      if(m.kind==='photo'){ np++; add(uniq('photos', String(np).padStart(2,'0') + (m.legende?' '+fileSafe(m.legende):''), ext||'.jpg'), m.data);
+        if(m.ops?.length && m.base && m.base!==m.data) add(uniq('photos/originales', String(np).padStart(2,'0'), '.jpg'), m.base); }
+      else if(m.kind==='croquis'){ nc++; add(uniq('croquis', String(nc).padStart(2,'0') + (m.legende?' '+fileSafe(m.legende):''), ext||'.png'), m.data); }
+      else if(m.kind==='fichier'){ const nm=fileSafe(m.name)||'fichier', i=nm.lastIndexOf('.'); add(uniq('fichiers', i>0?nm.slice(0,i):nm, i>0?nm.slice(i):''), m.data); }
+    }
+    const blob = await zip.generateAsync({type:'blob', compression:'STORE'});
+    const name = `releve-${base}.zip`, file = new File([blob], name, {type:'application/zip'});
+    if(TOUCH && navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file], title:name}); return; }catch(e){ if(e.name==='AbortError') return; } }
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 10000);
+    toast('Zip enregistré');
+  }catch(e){ console.error(e); toast('Export impossible : '+e.message); }
 }
 function download(chantiers, media, name){
   const blob = new Blob([JSON.stringify({app:'releves-chantier', v:2, exported:new Date().toISOString(), chantiers, media})], {type:'application/json'});

@@ -30,6 +30,8 @@ const q = {
   putMedia: db.prepare('INSERT INTO media (id, chantier_id, json, updated) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET chantier_id = excluded.chantier_id, json = excluded.json, updated = excluded.updated'),
   delMedia: db.prepare('DELETE FROM media WHERE id = ?'),
   delMediaOf: db.prepare('DELETE FROM media WHERE chantier_id = ?'),
+  mediaIds: db.prepare('SELECT id, chantier_id AS chantierId FROM media'),
+  mediaOne: db.prepare('SELECT json FROM media WHERE id = ?'),
   stats: db.prepare('SELECT (SELECT COUNT(*) FROM chantiers) AS chantiers, (SELECT COUNT(*) FROM media) AS media, (SELECT MAX(updated) FROM chantiers) AS updated'),
 };
 
@@ -78,6 +80,13 @@ api.delete('/chantiers/:id', (req, res) => {
 api.get('/chantiers/:id/media', (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Identifiant invalide' });
   res.json(q.mediaOf.all(req.params.id).map(r => JSON.parse(r.json)));
+});
+api.get('/media-ids', (req, res) => res.json(q.mediaIds.all()));
+api.get('/media/:id', (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Identifiant invalide' });
+  const r = q.mediaOne.get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'Introuvable' });
+  res.json(JSON.parse(r.json));
 });
 api.put('/media/:id', (req, res) => {
   const m = req.body;
