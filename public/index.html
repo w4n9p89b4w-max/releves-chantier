@@ -50,6 +50,13 @@ h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;margi
 .syncbox{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .syncdot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
 .syncdot.ok{background:var(--ok)} .syncdot.wait{background:var(--warn)} .syncdot.err{background:var(--danger)}
+.calep-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.calep-row .note{color:var(--muted);font-size:13px}
+#calepLayer{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+#calepLayer .bar{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--line)}
+#calepLayer .bar b{font-size:15px}
+#calepLayer .bar .st{color:var(--muted);font-size:13px;margin-left:auto}
+#calepLayer iframe{flex:1;width:100%;border:0;background:#fff}
 .viewbanner{background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:10px}
 body.viewer #newBtn, body.viewer .tb, body.viewer .sheetbar .btn, body.viewer [data-del], body.viewer [data-annot],
 body.viewer #delChantier, body.viewer .quick, body.viewer [data-addpan], body.viewer [data-delpan], body.viewer #geoBtn,
@@ -403,7 +410,7 @@ const fmt = (x, d=2) => x.toLocaleString('fr-FR', {minimumFractionDigits:d, maxi
 const size = b => b > 1048576 ? fmt(b/1048576,1)+' Mo' : Math.max(1,Math.round(b/1024))+' Ko';
 const inFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
 let toastT;
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2200); }
+function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),ms); }
 function armed(btn, label, action){
   if(btn.classList.contains('armed')){ action(); return; }
   const old = btn.textContent; btn.classList.add('armed'); btn.textContent = label;
@@ -477,18 +484,18 @@ const Sync = {
     SYNC.pulling = true; SYNC.pulled = Date.now();
     try{
       const ids = await this.api('GET', '/media-ids');
-      const have = new Set((await DB.all('media')).map(m=>m.id));
+      const have = new Map((await DB.all('media')).map(m=>[m.id, m.rev ?? null]));
       const out = new Set((await DB.all('outbox')).map(o=>o.id));
       const known = new Set(S.list.filter(c=>!c.exemple).map(c=>c.id));
       let n = 0;
       for(const r of ids){
-        if(have.has(r.id) || out.has('media:'+r.id) || !known.has(r.chantierId)) continue;
+        if((have.has(r.id) && (r.rev == null || have.get(r.id) === r.rev)) || out.has('media:'+r.id) || !known.has(r.chantierId)) continue;   // nouveau, ou calepinage modifié au bureau
         const m = await this.api('GET', '/media/'+encodeURIComponent(r.id));
         if(!m || m.id!==r.id) continue;
         await DB.rawPut('media', m); n++;
-        if(S.cur?.id===m.chantierId && !S.media.some(x=>x.id===m.id)){ S.media.push(m); S.media.sort((a,b)=>a.created-b.created); renderGallery(); renderStrip(); }
+        if(S.cur?.id===m.chantierId){ S.media = S.media.filter(x=>x.id!==m.id); S.media.push(m); S.media.sort((a,b)=>a.created-b.created); renderGallery(); renderStrip(); }
       }
-      if(n){ toast(n>1 ? `${n} photos/fichiers reçus du bureau` : '1 photo/fichier reçu du bureau'); storeInfo(); }
+      if(n){ toast(n>1 ? `${n} éléments reçus du bureau` : '1 élément reçu du bureau'); storeInfo(); }
     }catch{}
     finally{ SYNC.pulling = false; }
   },
@@ -770,6 +777,14 @@ kbLock(document.body);
 /* L'iPad n'affiche le clavier que si la case reçoit le focus pendant le « tap » (événement click) et n'est
    pas verrouillée à ce moment-là : on empêche donc le focus automatique (mousedown), puis au click on
    déverrouille et on donne le focus nous-mêmes. */
+/* Pencil sur une case : avec « Griffonner » activé, l'iPad n'ouvre pas le clavier (il attend l'écriture
+   manuscrite). Rien à faire côté page : on le rappelle une fois par session. */
+let pencilTip = false;
+document.addEventListener('pointerdown', e => {
+  if(pencilTip || e.pointerType!=='pen' || !e.target.closest?.('[data-kb], input[data-pad]')) return;
+  pencilTip = true;
+  setTimeout(()=>{ toast('Pas de clavier avec le Pencil ? Réglages de l’iPad › Apple Pencil › désactiver « Griffonner », ou touchez la case avec le doigt', 6000); }, 600);
+}, true);
 document.addEventListener('mousedown', e => {
   const el = e.target.closest?.('[data-kb]');
   if(el && document.activeElement !== el) e.preventDefault();
@@ -819,7 +834,7 @@ function renderMain(){
     <header class="head">
       <div class="left"><button class="btn sm ghost back" type="button" id="backBtn">‹ Chantiers</button>
         <h2 id="title">${esc(fullName(c)||'Nouveau client')}</h2>${c.exemple?'<span class="chip ex">Exemple</span>':''}</div>
-      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a><a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
+      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a>${SYNC.role==='viewer'?'<a href="#secCalep">Calepinage</a>':''}<a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
       <div class="actions">${SYNC.role==='viewer'?'<button class="btn sm" type="button" id="refreshBtn">Actualiser</button>':''}<button class="btn sm" type="button" id="openExport">Exporter</button><button class="btn sm primary" type="button" id="openReport">Rapport</button></div>
     </header>
 
@@ -828,6 +843,11 @@ function renderMain(){
     <section class="card" id="secMes">${mesuresHTML()}</section>
 
     <section class="card" id="drawSec">${drawHTML()}</section>
+
+    ${SYNC.role==='viewer' ? `<section class="card" id="secCalep">
+      <div class="card-h"><h3>Calepinage toiture</h3><span class="eyebrow">Au bureau</span></div>
+      <div class="calep-row"><button class="btn primary" type="button" id="calepOpen">Ouvrir le calepinage</button><span class="note" id="calepInfo"></span></div>
+    </section>` : ''}
 
     <section class="card" id="secFiles">
       <div class="card-h"><h3>Photos &amp; fichiers</h3><span class="eyebrow">Photos, PDF, plans, devis…</span></div>
@@ -851,6 +871,7 @@ function renderMain(){
   </div>`;
 
   $('#backBtn').onclick = async () => { await flushDrawing(); $('#app').classList.remove('detail'); };
+  if($('#calepOpen')){ $('#calepOpen').onclick = () => openCalepinage(c); calepInfo(); }
   $('#openReport').onclick = async () => { await flushDrawing(); openReport(); };
   $('#openExport').onclick = async () => { await flushDrawing(); openExport(); };
   if($('#refreshBtn')) $('#refreshBtn').onclick = async () => { const o=S.cur; await loadRemote(true); if(o && S.cur===byId(o.id)){ S.media = await Sync.api('GET', `/chantiers/${encodeURIComponent(o.id)}/media`).catch(()=>S.media); renderMain(); } toast('Dossiers à jour'); };
@@ -1807,6 +1828,17 @@ $('#exportDlg').onclick = async e => {
 /* Projet pour le calepinage toiture (format « calepinage-toiture » v2, ouvert par « Ouvrir (.json) ») :
    seule la fiche chantier est remplie, les pans se dessinent dans le calepinage. */
 function exportCalepinage(c){
+  const saved = S.media.find(m=>m.kind==='calepinage' && m.chantierId===c.id)?.projet;
+  const out = saved || calepinageNew(c);
+  const base = [c.nom, c.prenom].filter(Boolean).join(' ').trim();
+  const name = 'calepinage' + (base ? '-' + base.replace(/[^\w\-àâäéèêëîïôöùûüç ]/gi,'').replace(/\s+/g,'-') : '-projet') + '.json';
+  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  toast(inFrame ? 'Le téléchargement marche dans l\u2019appli installée' : 'Projet calepinage enregistré');
+}
+/* projet de calepinage neuf : fiche chantier remplie depuis le dossier, aucun pan */
+function calepinageNew(c){
   const t = c.toiture || {};
   const produit = (listVal(t.produit).split(', ')[0] || '');
   const toleType = produit === 'Ondulit' ? 'Ondulit' : 'Coverib';
@@ -1823,13 +1855,63 @@ function exportCalepinage(c){
     },
     panSelectionne:0, vue:null, outil:'draw', fond:null
   };
-  const base = [c.nom, c.prenom].filter(Boolean).join(' ').trim();
-  const name = 'calepinage' + (base ? '-' + base.replace(/[^\w\-àâäéèêëîïôöùûüç ]/gi,'').replace(/\s+/g,'-') : '-projet') + '.json';
-  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
-  const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
-  toast(inFrame ? 'Le téléchargement marche dans l\u2019appli installée' : 'Projet calepinage enregistré');
+  return out;
 }
+/* ---------- Calepinage toiture intégré (consultation, Mac/PC) ----------
+   La page calepinage.html?embed=1 s'ouvre par-dessus le dossier ; elle demande son projet (calep-ready),
+   et renvoie le projet à chaque modification (calep-save). Il est enregistré sur le serveur comme un
+   élément du dossier (kind 'calepinage', id fixe 'calep-<dossier>', rev = date de la version) ;
+   la tablette récupère chaque nouvelle version. */
+const calepOf = c => S.media.find(m=>m.kind==='calepinage' && m.chantierId===c.id);
+function calepInfo(){
+  const el = $('#calepInfo'); if(!el || !S.cur) return;
+  const m = calepOf(S.cur), n = m?.projet?.projet?.pans?.length || 0;
+  el.textContent = m ? `${n} pan${n>1?'s':''} · enregistré le ${new Date(m.rev||m.created).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})}` : 'Pas encore commencé : la fiche client sera remplie automatiquement.';
+}
+const CAL = {c:null, busy:false, next:null, resolve:null};
+async function calepSend(){
+  if(CAL.busy || !CAL.next) return;
+  const {c, data} = CAL.next; CAL.next = null; CAL.busy = true;
+  const old = calepOf(c), id = 'calep-' + c.id;
+  const m = {id, chantierId:c.id, kind:'calepinage', projet:data, created: old?.created || Date.now(), rev: Date.now(), ajoutBureau:true};
+  const st = $('#calepLayer .st');
+  try{
+    await Sync.api('PUT', '/media/'+encodeURIComponent(id), m);
+    S.media = S.media.filter(x=>x.id!==id); S.media.push(m);
+    if(st) st.textContent = 'Enregistré à ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){ if(st) st.textContent = navigator.onLine ? 'Non enregistré : '+e.message : 'Non enregistré : pas de connexion'; }
+  CAL.busy = false;
+  if(CAL.next) calepSend(); else if(CAL.resolve){ CAL.resolve(); CAL.resolve = null; }
+}
+function openCalepinage(c){
+  if($('#calepLayer')) return;
+  CAL.c = c;
+  const L = document.createElement('div'); L.id = 'calepLayer';
+  L.innerHTML = `<div class="bar"><b>Calepinage toiture · ${esc(fullName(c)||'Sans nom')}</b><span class="st">Ouverture…</span>
+    <button class="btn sm primary" type="button" id="calepClose">Fermer</button></div><iframe src="calepinage.html?embed=1" title="Calepinage toiture"></iframe>`;
+  document.body.appendChild(L); document.body.style.overflow = 'hidden';
+  $('#calepClose').onclick = closeCalepinage;
+}
+async function closeCalepinage(){
+  const L = $('#calepLayer'); if(!L) return;
+  const fr = L.querySelector('iframe');
+  // dernière version : on la demande à la page, puis on attend l'envoi (2 s maximum)
+  try{ fr.contentWindow.postMessage({type:'calep-flush'}, location.origin); }catch{}
+  await new Promise(r=>setTimeout(r, 250));
+  if(CAL.busy || CAL.next) await Promise.race([new Promise(r=>CAL.resolve=r), new Promise(r=>setTimeout(r, 2000))]);
+  L.remove(); document.body.style.overflow = ''; CAL.c = null; calepInfo();
+}
+window.addEventListener('message', e => {
+  const L = $('#calepLayer'); if(e.origin !== location.origin || !L || !CAL.c || !e.data) return;
+  const fr = L.querySelector('iframe'); if(e.source !== fr.contentWindow) return;
+  if(e.data.type === 'calep-ready'){
+    fr.contentWindow.postMessage({type:'calep-open', data: calepOf(CAL.c)?.projet || calepinageNew(CAL.c)}, location.origin);
+    L.querySelector('.st').textContent = calepOf(CAL.c) ? 'Projet du dossier ouvert' : 'Nouveau projet (fiche client remplie)';
+  }
+  if(e.data.type === 'calep-save' && e.data.data){ CAL.next = {c:CAL.c, data:e.data.data}; calepSend(); }
+});
+document.addEventListener('keydown', e => { if(e.key==='Escape' && $('#calepLayer') && document.activeElement?.tagName!=='IFRAME') closeCalepinage(); });
+
 /* ---------- Tout exporter : un .zip avec rapport PDF + photos + croquis + fichiers ---------- */
 const libs = {};
 function loadLib(src){
@@ -1890,12 +1972,13 @@ async function exportZip(c){
     await Promise.all([loadLib('lib/jspdf.umd.min.js'), loadLib('lib/jszip.min.js')]);
     const media = S.media.filter(m=>m.chantierId===c.id).sort((a,b)=>a.created-b.created);
     const zip = new JSZip(), used = new Set();
+    /* Tout dans un seul dossier : « HOARAU JEAN - TOITURE - TÔLE PERFORÉE » */
+    const TYPES = [['toiture','TOITURE'],['portail','PORTAIL & CLÔTURE'],['perforee','TÔLE PERFORÉE']];
+    const base = [fileSafe([c.nom, c.prenom].filter(Boolean).join(' ') || fullName(c)).toLocaleUpperCase('fr-FR') || 'CHANTIER', ...TYPES.filter(([k])=>c.types.includes(k)).map(([,l])=>l)].join(' - ');
+    const root = zip.folder(base);
     const uniq = (dir, name, ext) => { let b=`${dir}/${name}`, f=b+ext, i=2; while(used.has(f.toLowerCase())) f=`${b} (${i++})${ext}`; used.add(f.toLowerCase()); return f; };
-    const add = (path, data) => zip.file(path, data.slice(data.indexOf(',')+1), {base64:true});
-    /* Nom du fichier : « Nom Prénom - Toiture - Portail-clôture - Tôle perforée » */
-    const TYPES = [['toiture','Toiture'],['portail','Portail-clôture'],['perforee','Tôle perforée']];
-    const base = [fileSafe([c.nom, c.prenom].filter(Boolean).join(' ') || fullName(c)) || 'Chantier', ...TYPES.filter(([k])=>c.types.includes(k)).map(([,l])=>l)].join(' - ');
-    zip.file(`Rapport ${base}.pdf`, await reportPDF(c, media));
+    const add = (path, data) => root.file(path, data.slice(data.indexOf(',')+1), {base64:true});
+    root.file(`RAPPORT ${base}.pdf`, await reportPDF(c, media));
     let np=0, nc=0;
     for(const m of media){
       const ext = /^data:image\/png/.test(m.data) ? '.png' : /^data:image\/jpe?g/.test(m.data) ? '.jpg' : '';
@@ -1903,6 +1986,7 @@ async function exportZip(c){
         if(m.ops?.length && m.base && m.base!==m.data) add(uniq('photos/originales', String(np).padStart(2,'0'), '.jpg'), m.base); }
       else if(m.kind==='croquis'){ nc++; add(uniq('croquis', String(nc).padStart(2,'0') + (m.legende?' '+fileSafe(m.legende):''), ext||'.png'), m.data); }
       else if(m.kind==='fichier'){ const nm=fileSafe(m.name)||'fichier', i=nm.lastIndexOf('.'); add(uniq('fichiers', i>0?nm.slice(0,i):nm, i>0?nm.slice(i):''), m.data); }
+      else if(m.kind==='calepinage' && m.projet) root.file(`calepinage/CALEPINAGE ${base}.json`, JSON.stringify(m.projet));
     }
     const blob = await zip.generateAsync({type:'blob', compression:'STORE'});
     const name = `${base}.zip`, file = new File([blob], name, {type:'application/zip'});

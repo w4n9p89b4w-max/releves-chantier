@@ -30,7 +30,7 @@ const q = {
   putMedia: db.prepare('INSERT INTO media (id, chantier_id, json, updated) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET chantier_id = excluded.chantier_id, json = excluded.json, updated = excluded.updated'),
   delMedia: db.prepare('DELETE FROM media WHERE id = ?'),
   delMediaOf: db.prepare('DELETE FROM media WHERE chantier_id = ?'),
-  mediaIds: db.prepare('SELECT id, chantier_id AS chantierId FROM media'),
+  mediaIds: db.prepare("SELECT id, chantier_id AS chantierId, json_extract(json, '$.rev') AS rev FROM media"),
   mediaOne: db.prepare('SELECT json FROM media WHERE id = ?'),
   stats: db.prepare('SELECT (SELECT COUNT(*) FROM chantiers) AS chantiers, (SELECT COUNT(*) FROM media) AS media, (SELECT MAX(updated) FROM chantiers) AS updated'),
 };
