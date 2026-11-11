@@ -1481,19 +1481,23 @@ function bindCanvas(cv){
       pushOps([...n, {...preview, txt}]);
     }, () => { E.cur=null; paint(); }, '', true);
   };
-  let active=null, st=null;
+  let active=null, activeType=null, st=null;
   /* Gestes : 2 doigts = zoom + déplacement ; en « Pencil seul », 1 doigt déplace la feuille zoomée ;
      tape rapide à 2 doigts (sans bouger) = annuler */
   const G = {pts:new Map(), on:false, lock:false, s:null, tap:null};
   const centroid = () => { const a=[...G.pts.values()]; return [a.reduce((t,p)=>t+p[0],0)/a.length, a.reduce((t,p)=>t+p[1],0)/a.length]; };
   const spread = () => { const a=[...G.pts.values()]; return a.length<2 ? 0 : Math.hypot(a[0][0]-a[1][0], a[0][1]-a[1][1]); };
+  // abandonne le trait en cours (sans rien enregistrer)
+  const cancelStroke = () => { if(st){ if(st.mode!=='draw') E.ops = st.base; E.cur=null; st=null; E.guide=null; E.match=null; commit(); } active=null; activeType=null; };
   const gBegin = () => {
-    if(st){ if(st.mode!=='draw') E.ops = st.base; E.cur=null; st=null; active=null; E.guide=null; E.match=null; commit(); }
+    cancelStroke();
     G.on=true; G.lock=true; G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
   cv.addEventListener('pointerdown', e => {
     if(e.pointerType!=='touch') return;
     G.pts.set(e.pointerId, [e.clientX, e.clientY]);
+    try{ cv.setPointerCapture(e.pointerId); }catch{}   // toujours capturé : le relâchement du doigt arrive même hors du cadre
+    if(activeType==='pen'){ G.tap=null; return; }      // Pencil en train de dessiner : la main posée n'interrompt pas le trait
     if(G.pts.size===1) G.tap = {t:Date.now(), start:new Map(), ok:true, max:0};
     if(G.tap){ G.tap.start.set(e.pointerId, [e.clientX, e.clientY]); G.tap.max = Math.max(G.tap.max, G.pts.size); }
     if(G.pts.size>=2 || (E.pencilOnly && G.pts.size===1)){ e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch{} gBegin(); }
@@ -1502,7 +1506,7 @@ function bindCanvas(cv){
     if(!G.pts.has(e.pointerId)) return;
     G.pts.set(e.pointerId, [e.clientX, e.clientY]);
     const p0 = G.tap?.start.get(e.pointerId); if(p0 && Math.hypot(e.clientX-p0[0], e.clientY-p0[1]) > 14) G.tap.ok = false;
-    if(!G.on) return;
+    if(!G.on || activeType==='pen') return;
     const c=centroid(), d=spread(), s0=G.s, V0=s0.V, r=cv.getBoundingClientRect(), dp=DPR();
     const s = clampS(s0.d && d ? V0.s * d/s0.d : V0.s);
     const wx = V0.ox + (s0.c[0]-r.left)*dp/V0.s, wy = V0.oy + (s0.c[1]-r.top)*dp/V0.s;   // point de la feuille sous les doigts
@@ -1517,7 +1521,7 @@ function bindCanvas(cv){
     }
     else if(G.on) G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
-  cv.addEventListener('pointerup', gEnd); cv.addEventListener('pointercancel', gEnd);
+  cv.addEventListener('pointerup', gEnd); cv.addEventListener('pointercancel', gEnd); cv.addEventListener('lostpointercapture', gEnd);
   cv.addEventListener('wheel', e => {
     if(e.ctrlKey){ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
     else if($('#drawSec').classList.contains('full') || e.shiftKey){     // molette : déplace la feuille (plein écran)
@@ -1529,8 +1533,13 @@ function bindCanvas(cv){
   cv.addEventListener('pointerdown', e => {
     if(E.pencilOnly && e.pointerType==='touch') return;
     if(G.lock && e.pointerType==='touch') return;
-    if(active!==null || !$('#bubble').hidden) return;
-    e.preventDefault(); active=e.pointerId; cv.setPointerCapture(e.pointerId);
+    if(!$('#bubble').hidden) return;
+    if(e.pointerType==='pen'){
+      // le Pencil passe toujours en priorité : trait commencé par la paume, geste de zoom, ou trait précédent mal terminé
+      if(active!==null) cancelStroke();
+      G.on=false; if(G.tap) G.tap.ok=false;   // la paume posée pendant le trait n'est pas une « tape à 2 doigts »
+    } else if(active!==null) return;
+    e.preventDefault(); active=e.pointerId; activeType=e.pointerType; try{ cv.setPointerCapture(e.pointerId); }catch{}
     const p = pt(e); st = {down:[e.clientX,e.clientY], moved:false, base:E.ops};
     const lineTool = LINE_TOOLS.includes(E.tool);
     /* Cote : glisser l'éloigne ou la rapproche de son trait, toujours parallèle (pas de glissement le long) */
@@ -1611,7 +1620,7 @@ function bindCanvas(cv){
     }
   });
   const end = e => {
-    if(e.pointerId!==active) return; active=null;
+    if(e.pointerId!==active) return; active=null; activeType=null;
     const s0=st; st=null; E.guide=null; E.match=null; if(!s0) return;
     if(s0.mode==='pan') return;
     if(s0.mode==='coteOff' && !s0.moved){
@@ -1636,7 +1645,7 @@ function bindCanvas(cv){
     else paint();
     positionSelbar();
   };
-  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end); cv.addEventListener('lostpointercapture', end);
 }
 let bubbleOk=null, bubbleNo=null;
 /* Pavé numérique pour les cotes ; clavier normal pour le texte libre */
