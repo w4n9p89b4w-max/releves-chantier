@@ -323,7 +323,19 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
   body.print-label #report{display:none!important}
   body.print-label #labelSheet{display:block}
   #report{position:static;overflow:visible;background:#fff}
-  .rep{box-shadow:none;margin:0;max-width:none;padding:0}
+  .rep{box-shadow:none;margin:0;max-width:none;padding:0;border-radius:0}
+  /* rapport compact : même présentation que l'aperçu, en plus serré (photos 3 par ligne, croquis 2 par ligne) */
+  .rep h1{font-size:18pt}
+  .rep h2{font-size:12pt;border-bottom-width:1px;padding-bottom:2px;margin:12px 0 6px;break-after:avoid}
+  .rep .kv{grid-template-columns:repeat(3,1fr);gap:0 16px;font-size:9pt}
+  .rep .kv div{padding:1.5px 0}
+  .rep .notes{font-size:9.5pt}
+  .rep ul{font-size:9pt;margin:0}
+  .rep .pics{grid-template-columns:repeat(3,1fr)!important;gap:8px}
+  .rep .pics.cr{grid-template-columns:repeat(2,1fr)!important}
+  .rep figure img{max-height:62mm;object-fit:contain;background:#fff}
+  .rep .pics.cr figure img{max-height:95mm}
+  .rep figcaption{font-size:8pt;margin-top:2px}
 }
 </style>
 
@@ -1771,7 +1783,7 @@ function openReport(){
     <p style="color:#5a6870;margin:6px 0 0">Visite du ${c.date?new Date(c.date).toLocaleDateString('fr-FR',{dateStyle:'long'}):'—'} · EcoTole</p>
     <h2>Client</h2>${kv([['Nom',c.nom],['Prénom',c.prenom],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']])}`;
   if(c.notes) h += `<h2>Remarques</h2><div class="notes">${esc(c.notes)}</div>`;
-  if(cr.length) h += `<h2>Croquis</h2><div class="pics">${cr.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
+  if(cr.length) h += `<h2>Croquis</h2><div class="pics cr">${cr.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
   if(c.types.includes('toiture')){
     const t=c.toiture;
     h += `<h2>Toiture</h2>${kv([['Couverture existante',listVal(t.existante)],['État',listVal(t.etat)],['Charpente',listVal(t.charpente)],['Isolation',listVal(t.isolation)],['Accès',t.acces],['Produit proposé',listVal(t.produit)],['Couleur',listVal(t.couleur)]])}`;
