@@ -850,7 +850,7 @@ function renderMain(){
     <header class="head">
       <div class="left"><button class="btn sm ghost back" type="button" id="backBtn">‹ Chantiers</button>
         <h2 id="title">${esc(fullName(c)||'Nouveau client')}</h2>${c.exemple?'<span class="chip ex">Exemple</span>':''}</div>
-      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a>${SYNC.role==='viewer'?'<a href="#secCalep">Calepinage</a>':''}<a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
+      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a>${SYNC.role==='viewer'?'<a href="#secCalep">Calepinage</a><a href="#secTolePerf">Tôle perforée</a>':''}<a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
       <div class="actions">${SYNC.role==='viewer'?'<button class="btn sm" type="button" id="refreshBtn">Actualiser</button>':''}<button class="btn sm" type="button" id="openExport">Exporter</button><button class="btn sm primary" type="button" id="openReport">Rapport</button></div>
     </header>
 
@@ -863,6 +863,10 @@ function renderMain(){
     ${SYNC.role==='viewer' ? `<section class="card" id="secCalep">
       <div class="card-h"><h3>Calepinage toiture</h3><span class="eyebrow">Au bureau</span></div>
       <div class="calep-row"><button class="btn primary" type="button" id="calepOpen">Ouvrir le calepinage</button><span class="note" id="calepInfo"></span></div>
+    </section>
+    <section class="card" id="secTolePerf">
+      <div class="card-h"><h3>Tôle perforée</h3><span class="eyebrow">Au bureau</span></div>
+      <div class="calep-row"><button class="btn primary" type="button" id="ppOpen">Ouvrir le calcul tôle perforée</button><span class="note">« Enregistrer dans le dossier » range le rapport avec les croquis.</span></div>
     </section>` : ''}
 
     <section class="card" id="secFiles">
@@ -888,6 +892,7 @@ function renderMain(){
 
   $('#backBtn').onclick = async () => { await flushDrawing(); $('#app').classList.remove('detail'); };
   if($('#calepOpen')){ $('#calepOpen').onclick = () => openCalepinage(c); calepInfo(); }
+  if($('#ppOpen')) $('#ppOpen').onclick = () => openTolePerf(c);
   $('#openReport').onclick = async () => { await flushDrawing(); openReport(); };
   $('#openExport').onclick = async () => { await flushDrawing(); openExport(); };
   if($('#refreshBtn')) $('#refreshBtn').onclick = async () => { const o=S.cur; await loadRemote(true); if(o && S.cur===byId(o.id)){ S.media = await Sync.api('GET', `/chantiers/${encodeURIComponent(o.id)}/media`).catch(()=>S.media); renderMain(); } toast('Dossiers à jour'); };
@@ -1124,7 +1129,7 @@ function mountDrawing(){
     const m = {id:uid(), chantierId:S.cur.id, kind:src.kind, legende: base + (n ? ` (copie ${n+1})` : ' (copie)'),
       ops, w:src.w||1600, h:src.h||1150, data:src.data, created:Date.now()};
     if(src.k !== undefined) m.k = src.k;
-    if(src.kind==='photo') m.base = src.base;
+    if(src.base) m.base = src.base;
     S.media.push(m); await DB.put('media', m); touch();
     loadSheet(m); if(m.kind==='photo') renderGallery();
     toast('Feuille dupliquée');
@@ -1171,7 +1176,7 @@ function loadSheet(m, remount){
   syncTb(); renderStrip();
   const go = () => fit();
   E.view = {s:1, ox:0, oy:0, base:1, center:true};
-  if(m.kind==='photo'){ E.base=new Image(); E.base.onload=go; E.base.src=m.base; } else { E.base=null; go(); }
+  if(m.base){ E.base=new Image(); E.base.onload=go; E.base.src=m.base; } else { E.base=null; go(); }   // photo, ou croquis « rapport » (image de fond)
 }
 function renderStrip(){
   const s=$('#strip'); if(!s) return;
@@ -1305,7 +1310,7 @@ function commit(){
   c.setTransform(1,0,0,1,0,0);
   const x0 = V.ox, y0 = V.oy, x1 = V.ox + cv.width/V.s, y1 = V.oy + cv.height/V.s;
   toWorld(c, V);
-  if(E.m.kind === 'photo'){
+  if(E.m.kind === 'photo' || E.m.base){
     c.fillStyle = '#d9dfe3'; c.fillRect(x0, y0, x1-x0, y1-y0);
     if(E.base) c.drawImage(E.base, 0, 0, E.m.w, E.m.h);
   } else grid(c, x0, y0, x1, y1, V.s);
@@ -1404,7 +1409,7 @@ function sheetImage(m, ops){
   const out = document.createElement('canvas'); out.width = Math.round(W*f); out.height = Math.round(H*f);
   const c = out.getContext('2d');
   c.setTransform(f, 0, 0, f, -x0*f, -y0*f);
-  if(m.kind === 'photo'){ c.fillStyle='#fff'; c.fillRect(x0,y0,W,H); if(E.base) c.drawImage(E.base, 0, 0, m.w, m.h); }
+  if(m.kind === 'photo' || m.base){ c.fillStyle='#fff'; c.fillRect(x0,y0,W,H); if(E.base) c.drawImage(E.base, 0, 0, m.w, m.h); }
   else grid(c, x0, y0, x1, y1, f);
   resolveCotes(ops, k); ops.forEach(o => drawOp(c, o, k));
   return out.toDataURL('image/jpeg', 0.86);
@@ -1952,6 +1957,39 @@ window.addEventListener('message', e => {
   if(e.data.type === 'calep-save' && e.data.data){ CAL.next = {c:CAL.c, data:e.data.data}; calepSend(); }
 });
 document.addEventListener('keydown', e => { if(e.key==='Escape' && $('#calepLayer') && document.activeElement?.tagName!=='IFRAME') closeCalepinage(); });
+
+/* ---------- Tôle perforée (Portail Pro), consultation ----------
+   portail_pro.html?embed=tole s'ouvre par-dessus le dossier, seule la page Tôle perforée est visible.
+   « Enregistrer dans le dossier » envoie une image A4 du rapport (pp-report) : elle est rangée comme un croquis
+   (kind 'croquis', base = image, rapport:'tole-perforee'), visible dans la bande des croquis, le rapport et le zip. */
+const PP = {c:null};
+function openTolePerf(c){
+  if($('#calepLayer')) return;
+  PP.c = c;
+  const L = document.createElement('div'); L.id = 'calepLayer'; L.dataset.tool = 'pp';
+  L.innerHTML = `<div class="bar"><b>Tôle perforée · ${esc(fullName(c)||'Sans nom')}</b><span class="st">Ouverture…</span>
+    <button class="btn sm primary" type="button" id="ppClose">Fermer</button></div><iframe src="portail_pro.html?embed=tole" title="Calcul tôle perforée"></iframe>`;
+  document.body.appendChild(L); document.body.style.overflow = 'hidden';
+  $('#ppClose').onclick = () => { L.remove(); document.body.style.overflow = ''; PP.c = null; };
+}
+window.addEventListener('message', async e => {
+  const L = $('#calepLayer'); if(e.origin !== location.origin || !L || L.dataset.tool!=='pp' || !PP.c || !e.data) return;
+  const fr = L.querySelector('iframe'); if(e.source !== fr.contentWindow) return;
+  const st = L.querySelector('.st');
+  if(e.data.type === 'pp-ready'){ fr.contentWindow.postMessage({type:'pp-open', client: fullName(PP.c)||''}, location.origin); st.textContent = 'Calcul ouvert'; }
+  if(e.data.type === 'pp-report' && e.data.data?.img){
+    const {img, w, h} = e.data.data, c = PP.c;
+    const n = S.media.filter(m=>m.chantierId===c.id && m.rapport==='tole-perforee').length;
+    const m = {id:uid(), chantierId:c.id, kind:'croquis', rapport:'tole-perforee', base:img, data:img, w, h, ops:[], k:kOf(w, h),
+      legende:`Tôle perforée ${n+1} · ${new Date().toLocaleDateString('fr-FR')}`, created:Date.now(), ajoutBureau:true};
+    let ok = true, msg = '';
+    try{ await Sync.api('PUT', '/media/'+encodeURIComponent(m.id), m); }
+    catch(err){ ok = false; msg = navigator.onLine ? 'Non enregistré : '+err.message : 'Non enregistré : pas de connexion'; }
+    if(ok){ S.media.push(m); if(S.cur?.id===c.id){ renderStrip(); } st.textContent = 'Rapport enregistré avec les croquis ('+m.legende+')'; }
+    else st.textContent = msg;
+    fr.contentWindow.postMessage({type:'pp-saved', ok, msg}, location.origin);
+  }
+});
 
 /* ---------- Tout exporter : un .zip avec rapport PDF + photos + croquis + fichiers ---------- */
 const libs = {};

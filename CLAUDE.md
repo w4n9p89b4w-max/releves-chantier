@@ -7,6 +7,7 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
 ## Fichiers
 - `public/index.html` : toute l'appli (HTML + CSS + JS dans un seul fichier). C'est la version de référence.
 - `public/calepinage.html` : calepinage toiture (copie de G:\OneDrive\Bureau\teste calepinage\calepinage.html, mêmes modifs ; ici les bibliothèques viennent de public/lib au lieu du CDN). `?embed=1` = ouvert dans Relevés : projet reçu par postMessage (calep-ready → calep-open), renvoyé à chaque modif (calep-save, après une action de l'utilisateur), pas de localStorage.
+- `public/portail_pro.html` : copie de X:\Commercial\portail_pro.html (Portail Pro). `?embed=tole` = seule la page Tôle perforée (menu caché, pas d'appel /api/save ni /api/load) + bouton « Enregistrer dans le dossier » (rcSaveTole : rapport A4 paysage dessiné sur canvas par toleReportImage à partir de tolePageReportHTML({dataOnly:true}), envoyé par postMessage pp-report). À recopier si Etienne modifie son fichier.
 - `public/sw.js` : mode hors ligne. **Changer le numéro `releves-vNN` à chaque mise à jour de l'appli**, sinon l'iPad garde l'ancienne version.
 - `public/manifest.webmanifest`, icônes : installation sur l'écran d'accueil.
 - `server.js` : Express + SQLite (better-sqlite3), port 3010. Sert `public/` et l'API `/api/releves/*`
@@ -30,6 +31,7 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
   (file d'attente hors ligne `outbox` dans IndexedDB) ; « Consultation » lit le serveur, rien n'est modifiable sauf l'ajout de photos/fichiers :
   envoyés directement au serveur (PUT /media/:id, champ ajoutBureau), la tablette les récupère (Sync.pull via GET /media-ids puis GET /media/:id, après chaque envoi réussi et à l'ouverture d'un dossier).
 - Calepinage (consultation seulement) : bouton entre Dessin et Photos ; projet enregistré comme media `calep-<id dossier>` (kind 'calepinage', projet = fichier .json complet, rev = date) ; GET /media-ids renvoie rev, la tablette recharge si rev change. Pliages : P12 Chéneau, P13 Couvertine, P14 Hors standard (tracé à la main : ed.lines) ; dessins réduits au trait orange (+ textes ajoutés) ; impression = 1 seule page (fiche), quantités en grand.
+- Tôle perforée (consultation seulement) : carte après le calepinage ; le rapport est rangé comme croquis (kind 'croquis', rapport:'tole-perforee', base = image du rapport, annotable sur la tablette) ; les croquis avec `base` affichent l'image en fond (loadSheet/commit/sheetImage).
 - Le dossier d'exemple (M. Hoarau) n'est jamais envoyé au serveur.
 - iPad : cases de texte verrouillées tant qu'on ne les touche pas (bloque l'écriture manuscrite du Pencil),
   pavé numérique maison pour téléphone, code postal et mesures en mm.
