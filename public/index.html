@@ -301,14 +301,15 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 }
 @media (max-width:560px){ .tool span{display:none} .jump{display:none} }
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
-/* Étiquette contact 62 × 60 mm (imprimante thermique) */
-.label{width:62mm;height:60mm;box-sizing:border-box;padding:3.5mm;background:#fff;color:#000;display:flex;flex-direction:column;gap:1.4mm;font-family:var(--f-body);overflow:hidden}
-.label .lb-top{display:flex;justify-content:space-between;align-items:baseline;border-bottom:.4mm solid #000;padding-bottom:1mm;font:700 7.5pt var(--f-display);letter-spacing:.06em;text-transform:uppercase}
-.label .lb-name{font:700 15pt/1.05 var(--f-display);word-break:break-word}
+/* Étiquette contact : 62 mm de large (rouleau), longueur selon le contenu ; chaque ligne agrandie jusqu'à toute la largeur (fitLabel) */
+.label{width:62mm;min-height:40mm;box-sizing:border-box;padding:2.5mm 2.5mm 2mm;background:#fff;color:#000;display:flex;flex-direction:column;gap:1.2mm;font-family:var(--f-body);overflow:hidden}
+.label [data-fit]{white-space:nowrap;line-height:1.08}
+.label .lb-top{display:flex;justify-content:space-between;align-items:baseline;border-bottom:.4mm solid #000;padding-bottom:1mm;font:700 8pt var(--f-display);letter-spacing:.06em;text-transform:uppercase}
+.label .lb-name{font:700 15pt var(--f-display)}
 .label .lb-tel{font:600 13pt var(--f-num);letter-spacing:.02em}
-.label .lb-adr{font-size:9pt;line-height:1.25}
-.label .lb-mail{font-size:8pt;word-break:break-all}
-.label .lb-bot{margin-top:auto;display:flex;justify-content:space-between;font:600 7.5pt var(--f-body);border-top:.3mm dashed #000;padding-top:1mm}
+.label .lb-adr{display:flex;flex-direction:column;gap:.6mm;font-size:9pt}
+.label .lb-mail{font-size:8pt}
+.label .lb-bot{margin-top:auto;display:flex;justify-content:space-between;font:600 8.5pt var(--f-body);border-top:.3mm dashed #000;padding-top:1mm}
 #labelSheet{display:none}
 .exp-list{display:flex;flex-direction:column;gap:10px}
 .exp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:12px 14px;min-height:56px}
@@ -379,7 +380,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
       <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
       <button type="button" data-exp="json"><b>Fichier JSON</b><span>Copie complète du dossier (avec photos et croquis), réimportable avec « Restaurer ».</span></button>
       <button type="button" data-exp="calepinage"><b>Projet calepinage (.json)</b><span>Fiche chantier prête pour le calepinage : nom, prénom, adresse, ville / code postal, téléphone, mail, tôle et pliages. Dans le calepinage : « Ouvrir (.json) ».</span></button>
-      <button type="button" data-exp="label"><b>Étiquette contact 62 × 60 mm</b><span>Nom, téléphone, adresse et date de visite, pour l’imprimante d’étiquettes.</span></button>
+      <button type="button" data-exp="label"><b>Étiquette contact (62 mm de large)</b><span>Nom, téléphone, adresse et date de visite, pour l’imprimante d’étiquettes.</span></button>
     </div>
     <div class="lb-preview" id="lbPreview"></div>
     <p class="note" id="expNote"></p>
@@ -1813,17 +1814,31 @@ function labelHTML(c){
   const d = c.date ? new Date(c.date).toLocaleDateString('fr-FR') : '';
   return `<div class="label">
     <div class="lb-top"><span>EcoTole</span><span>Relevé chantier</span></div>
-    <div class="lb-name">${esc(fullName(c)||'Client')}</div>
-    ${c.tel?`<div class="lb-tel">${esc(c.tel)}</div>`:''}
-    ${fullAdr(c)?`<div class="lb-adr">${esc(c.adresse)}${c.adresse&&(c.cp||c.ville)?'<br>':''}${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}
-    ${c.email?`<div class="lb-mail">${esc(c.email)}</div>`:''}
+    <div class="lb-name" data-fit="36">${esc(fullName(c)||'Client')}</div>
+    ${c.tel?`<div class="lb-tel" data-fit="34">${esc(c.tel)}</div>`:''}
+    ${fullAdr(c)?`<div class="lb-adr">${c.adresse?`<div data-fit="24">${esc(c.adresse)}</div>`:''}${c.cp||c.ville?`<div data-fit="24">${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}</div>`:''}
+    ${c.email?`<div class="lb-mail" data-fit="20">${esc(c.email)}</div>`:''}
     <div class="lb-bot"><span>Visite ${esc(d)}</span><span>${esc(STATUTS[c.statut]||'')}</span></div>
   </div>`;
 }
+/* Agrandit chaque ligne marquée data-fit (taille max en pt) jusqu'à la largeur de l'étiquette ;
+   renvoie la hauteur de l'étiquette en mm. L'élément doit être affiché (mesure). */
+function fitLabel(label){
+  if(!label) return 60;
+  const avail = label.clientWidth - parseFloat(getComputedStyle(label).paddingLeft) - parseFloat(getComputedStyle(label).paddingRight);
+  label.querySelectorAll('[data-fit]').forEach(el=>{
+    el.style.fontSize='20pt'; el.style.width='max-content';
+    const w = el.getBoundingClientRect().width || 1;
+    el.style.fontSize = Math.max(6, Math.min(+el.dataset.fit, 20 * avail / w * 0.98)).toFixed(2) + 'pt'; el.style.width='';
+  });
+  return Math.ceil(label.getBoundingClientRect().height * 25.4 / 96);
+}
 function printWith(mode){
-  // mode 'label' : page de 62 × 60 mm ; sinon A4 pour le rapport
+  // mode 'label' : 62 mm de large, longueur selon le contenu ; sinon A4 pour le rapport
   let st = $('#pageStyle'); if(!st){ st=document.createElement('style'); st.id='pageStyle'; document.head.appendChild(st); }
-  st.textContent = mode==='label' ? '@page{size:62mm 60mm;margin:0}' : '@page{size:A4;margin:12mm}';
+  let h = 60;
+  if(mode==='label'){ const ls=$('#labelSheet'); ls.style.cssText='display:block;position:absolute;left:-9999px;top:0'; h = fitLabel(ls.querySelector('.label')); ls.style.cssText=''; ls.querySelector('.label').style.height = h+'mm'; }
+  st.textContent = mode==='label' ? `@page{size:62mm ${h}mm;margin:0}` : '@page{size:A4;margin:12mm}';
   document.body.classList.toggle('print-label', mode==='label');
   const done = () => { document.body.classList.remove('print-label'); window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);
@@ -1832,6 +1847,7 @@ function printWith(mode){
 function openExport(){
   const d=$('#exportDlg'), c=S.cur; if(!c) return;
   $('#lbPreview').innerHTML = labelHTML(c);
+  d.hidden=false; fitLabel($('#lbPreview .label')); document.fonts?.ready.then(()=>fitLabel($('#lbPreview .label')));
   $('#expNote').textContent = inFrame ? 'Dans l’aperçu Claude, l’impression et le téléchargement sont bloqués : ils marchent dans l’appli installée (iPad, Mac ou PC).' : '';
   d.hidden=false;
 }
