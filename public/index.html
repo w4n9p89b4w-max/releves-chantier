@@ -306,6 +306,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .label [data-fit]{white-space:nowrap;line-height:1.08}
 .label .lb-top{display:flex;justify-content:space-between;align-items:baseline;border-bottom:.4mm solid #000;padding-bottom:1mm;font:700 8pt var(--f-display);letter-spacing:.06em;text-transform:uppercase}
 .label .lb-name{font:700 15pt var(--f-display)}
+.label .lb-ent{font:700 12pt var(--f-body)}
 .label .lb-tel{font:600 13pt var(--f-num);letter-spacing:.02em}
 .label .lb-adr{display:flex;flex-direction:column;gap:.6mm;font-size:9pt}
 .label .lb-mail{font-size:8pt}
@@ -577,12 +578,12 @@ const blankPortail = () => ({type:'', largeur:'', hauteur:'', hPiliers:'', secti
 const newChantier = () => ({id:uid(), client:'', nom:'', prenom:'', tel:'', email:'', adresse:'', cp:'', ville:'', date:new Date().toISOString().slice(0,10), statut:'chiffrer',
   types:[], toiture:blankToiture(), portail:blankPortail(), notes:'', geo:null, created:Date.now(), updated:Date.now()});
 /* Nom affiché, adresse complète, valeurs à cases multiples */
-const fullName = c => c.client || [c.nom, c.prenom].filter(Boolean).join(' ');
+const fullName = c => c.client || [c.nom, c.prenom].filter(Boolean).join(' ') || c.entreprise || '';
 const fullAdr = c => [c.adresse, [c.cp, c.ville].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 const listVal = v => Array.isArray(v) ? v.join(', ') : (v || '');
 function normalize(c){
   if(c.nom===undefined){ c.nom = c.client || ''; c.prenom = ''; }
-  c.prenom ??= ''; c.cp ??= ''; c.ville ??= '';
+  c.prenom ??= ''; c.entreprise ??= ''; c.cp ??= ''; c.ville ??= '';
   const t = c.toiture || {};
   for(const k of ['existante','etat','charpente','isolation']) if(t[k] && !Array.isArray(t[k])) t[k] = [t[k]];
   if(t.ondulit === true && !t.produit) t.produit = ['Ondulit'];
@@ -655,12 +656,12 @@ async function storeInfo(){
 /* ---------- Liste ---------- */
 function renderList(){
   const q = S.q.trim().toLowerCase();
-  const items = sorted().filter(c => !q || `${fullName(c)} ${c.prenom} ${fullAdr(c)} ${c.tel}`.toLowerCase().includes(q));
+  const items = sorted().filter(c => !q || `${fullName(c)} ${c.prenom} ${c.entreprise||''} ${fullAdr(c)} ${c.tel}`.toLowerCase().includes(q));
   $('#list').innerHTML = items.map(c => `
     <button class="item" role="listitem" type="button" data-id="${c.id}" aria-current="${S.cur?.id===c.id}">
       <b>${esc(fullName(c)||'Nouveau client')}</b>
       <span class="meta">${c.exemple?'<span class="chip ex">Exemple</span>':''}<span class="chip st-${c.statut}">${STATUTS[c.statut]||''}</span></span>
-      <span class="meta"><span class="num">${c.date?new Date(c.date).toLocaleDateString('fr-FR'):''}</span><span>${esc((c.ville||c.adresse||'').slice(0,34))}</span></span>
+      <span class="meta"><span class="num">${c.date?new Date(c.date).toLocaleDateString('fr-FR'):''}</span><span>${esc([c.entreprise, c.ville||c.adresse].filter(Boolean).join(' · ').slice(0,40))}</span></span>
     </button>`).join('') || `<p class="note" style="padding:12px">Aucun chantier ne correspond.</p>`;
 }
 $('#list').addEventListener('click', e => { const b=e.target.closest('.item'); if(b) openChantier(b.dataset.id); });
@@ -694,6 +695,7 @@ function clientHTML(side){
       <div class="card-h"><h3>Contact client</h3></div>
       <div class="stack">
         <div class="two">${field('nom','Nom',{ph:'ex. Payet'})}${field('prenom','Prénom',{ph:'ex. Marie'})}</div>
+        ${field('entreprise','Entreprise',{ph:'si client professionnel'})}
         ${field('tel','Téléphone',{type:'tel', ph:'0692 …'})}
         ${field('email','E-mail',{type:'email'})}
         ${field('adresse','Adresse',{ph:'N° et rue, lieu-dit'})}
@@ -708,6 +710,7 @@ function clientHTML(side){
       <div class="grid">
         ${field('nom','Nom',{ph:'ex. Payet'})}
         ${field('prenom','Prénom',{ph:'ex. Marie'})}
+        ${field('entreprise','Entreprise',{ph:'si client professionnel'})}
         ${field('tel','Téléphone',{type:'tel', ph:'0692 …'})}
         ${field('email','E-mail',{type:'email'})}
         ${field('adresse','Adresse',{wide:true, ph:'N° et rue, lieu-dit'})}
@@ -915,9 +918,9 @@ function onField(e){
   const el = e.target;
   if(el.dataset.path){
     set(S.cur, el.dataset.path, el.type==='checkbox' ? el.checked : el.value); touch();
-    if(el.dataset.path==='nom' || el.dataset.path==='prenom'){
+    if(el.dataset.path==='nom' || el.dataset.path==='prenom' || el.dataset.path==='entreprise'){
       S.cur.client = [S.cur.nom, S.cur.prenom].map(x=>(x||'').trim()).filter(Boolean).join(' ');
-      $('#title').textContent = S.cur.client || 'Nouveau client';
+      $('#title').textContent = fullName(S.cur) || 'Nouveau client';
     }
     if(['tel','adresse','cp','ville','email'].includes(el.dataset.path)) renderContact();
     updateTotals();
@@ -1757,7 +1760,7 @@ function updateTotals(){
 
 /* ---------- Rapport ---------- */
 function reportText(c){
-  const L=[`RELEVÉ DE CHANTIER — ${fullName(c)||'Sans nom'}`, `Adresse : ${fullAdr(c)||'—'}`, `Tél. : ${c.tel||'—'}   E-mail : ${c.email||'—'}`, `Visite : ${c.date?new Date(c.date).toLocaleDateString('fr-FR'):'—'}`, ''];
+  const L=[`RELEVÉ DE CHANTIER — ${fullName(c)||'Sans nom'}`, ...(c.entreprise && c.entreprise!==fullName(c) ? [`Entreprise : ${c.entreprise}`] : []), `Adresse : ${fullAdr(c)||'—'}`, `Tél. : ${c.tel||'—'}   E-mail : ${c.email||'—'}`, `Visite : ${c.date?new Date(c.date).toLocaleDateString('fr-FR'):'—'}`, ''];
   if(c.notes) L.push('REMARQUES', c.notes, '');
   if(c.types.includes('toiture')){
     const t=c.toiture;
@@ -1782,7 +1785,7 @@ function openReport(){
   const photos=S.media.filter(m=>m.kind==='photo'), cr=S.media.filter(m=>m.kind==='croquis'), files=S.media.filter(m=>m.kind==='fichier');
   let h = `<h1>${esc(fullName(c)||'Sans nom')}</h1>
     <p style="color:#5a6870;margin:6px 0 0">Visite du ${c.date?new Date(c.date).toLocaleDateString('fr-FR',{dateStyle:'long'}):'—'} · EcoTole</p>
-    <h2>Client</h2>${kv([['Nom',c.nom],['Prénom',c.prenom],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']])}`;
+    <h2>Client</h2>${kv([['Nom',c.nom],['Prénom',c.prenom],['Entreprise',c.entreprise],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']])}`;
   if(c.notes) h += `<h2>Remarques</h2><div class="notes">${esc(c.notes)}</div>`;
   if(cr.length) h += `<h2>Croquis</h2><div class="pics cr">${cr.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
   if(c.types.includes('toiture')){
@@ -1815,6 +1818,7 @@ function labelHTML(c){
   return `<div class="label">
     <div class="lb-top"><span>EcoTole</span><span>Relevé chantier</span></div>
     <div class="lb-name" data-fit="36">${esc(fullName(c)||'Client')}</div>
+    ${c.entreprise && c.entreprise!==fullName(c) ? `<div class="lb-ent" data-fit="22">${esc(c.entreprise)}</div>` : ''}
     ${c.tel?`<div class="lb-tel" data-fit="34">${esc(c.tel)}</div>`:''}
     ${fullAdr(c)?`<div class="lb-adr">${c.adresse?`<div data-fit="24">${esc(c.adresse)}</div>`:''}${c.cp||c.ville?`<div data-fit="24">${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}</div>`:''}
     ${c.email?`<div class="lb-mail" data-fit="20">${esc(c.email)}</div>`:''}
@@ -1886,7 +1890,7 @@ function calepinageNew(c){
       settings:{largeur: toleType==='Ondulit' ? 0.785 : 0.773, debEgout:0, debFaitage:0, arrondi:'biais', lmax:'11', recouv:'', autoOrient:'x', mm:1,
         plLen:'6', plRec:'0.2', biaisAdd:0.07, biaisStep:0.05, biaisMenu:1, toleType, visM2:6},
       pans:[], drafts:[], live:[],
-      info:{nom:c.nom||'', prenom:c.prenom||'', entreprise:'', adresse:c.adresse||'',
+      info:{nom:c.nom||'', prenom:c.prenom||'', entreprise:c.entreprise||'', adresse:c.adresse||'',
         ville:[c.ville, c.cp].filter(Boolean).join(' '), tel:c.tel||'', mail:c.email||'',
         tole:[produit || toleType, couleur].filter(Boolean).join(' '), pli:couleur}
     },
@@ -1987,7 +1991,7 @@ async function reportPDF(c, media){
   y += 4; text(fullName(c)||'Sans nom', M, 20, 'bold'); y += 7;
   text(`Relevé de chantier · visite du ${c.date?new Date(c.date).toLocaleDateString('fr-FR',{dateStyle:'long'}):'-'} · EcoTole`, M, 10, 'normal', [90,104,112]); y += 4;
   section('Client');
-  rows([['Nom',c.nom],['Prénom',c.prenom],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']]);
+  rows([['Nom',c.nom],['Prénom',c.prenom],['Entreprise',c.entreprise],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']]);
   if(c.notes){ section('Remarques'); para(c.notes); }
   if(c.types.includes('toiture')){ const t=c.toiture; section('Toiture');
     rows([['Couverture existante',listVal(t.existante)],['État',listVal(t.etat)],['Charpente',listVal(t.charpente)],['Isolation',listVal(t.isolation)],['Accès',t.acces],['Produit proposé',listVal(t.produit)],['Couleur',listVal(t.couleur)]]); }
