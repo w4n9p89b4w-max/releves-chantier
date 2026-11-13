@@ -222,6 +222,8 @@ body.embed > header, body.embed #resetEx{display:none}
             <button class="tool" data-tool="select" title="Sélection (S)">Sélection</button>
             <button class="tool" data-tool="hand" title="Déplacer la vue (H, ou maintenir Espace, ou bouton du milieu)">Main</button>
             <button class="tool" data-tool="move" title="Déplacer une forme : point de base puis destination (M)">Déplacer</button>
+            <button class="tool" data-tool="copy" title="Copier une forme : point de base puis destination, autant de copies que voulu (C). Aussi Ctrl+C / Ctrl+V">Copier</button>
+            <button class="tool" data-tool="mirror" title="Miroir : choisis la forme, puis 2 points de l'axe de symétrie (I). Maj au 2e clic : retourne l'original au lieu d'en faire une copie">Miroir</button>
             <button class="tool on" data-tool="draw" title="Dessiner (D)">Dessiner</button>
             <button class="tool" data-tool="cons" title="Ligne pointillée de construction, hors géométrie (L)">Ligne pointillée</button>
             <button class="tool" data-tool="fill" title="Clique à l'intérieur d'une zone fermée par des traits pour en faire un pan (F)">Remplir</button>
@@ -230,6 +232,7 @@ body.embed > header, body.embed #resetEx{display:none}
             <button class="tool" data-tool="perp" title="Clique un côté : tôles perpendiculaires à ce côté (K)">Tôles ⟂ à un côté</button>
             <button class="tool" data-tool="para" title="Clique un côté : tôles parallèles à ce côté, pose qui démarre contre lui (P)">Tôles ∥ à un côté</button>
             <button class="tool" data-tool="start" title="Choisir la première tôle (T)">Départ tôles</button>
+            <button class="tool" data-tool="axe" title="Clique un trait ou un côté : un joint de tôles est posé sur son milieu, la pose part de là des deux côtés (X)">Départ milieu d'un trait</button>
           </div>
           <div class="grp">
             <button id="undoBtn" title="Annuler (Ctrl+Z)">↶ Annuler</button>
@@ -546,6 +549,12 @@ function roundUp(v, step) {
   return Math.ceil((v - 5e-5) / step) * step;
 }
 
+// point de départ choisi par « Départ milieu d'un trait » (milieu d'un côté du pan, ou point fixe pour un autre trait)
+function axePt(p) {
+  const a = p && p.depart === 'm' && p.axe; if (!a || p.mode !== 'draw' || !p.w) return null;
+  if (a.e != null) { if (a.e >= p.w.length) return null; const A = p.w[a.e], B = p.w[(a.e + 1) % p.w.length]; return [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]; }
+  return a.pt || null;
+}
 function calepine(p) {
   const g = panGeom(p); if (g.err) return g;
   const S = P.settings, w = tole().u;
@@ -556,7 +565,8 @@ function calepine(p) {
   const n = Math.ceil((xmax + off) / w - 1e-7), strips = [], bands = [];
   if (p.depart === 'm') {
     // départ au milieu : un joint sur l'axe (pointe du triangle, ou milieu du faîtage), tôles de part et d'autre
-    const top = pts.filter(q => q[1] >= ymax - 1e-6).map(q => q[0]), c = (Math.min(...top) + Math.max(...top)) / 2 + off;
+    const top = pts.filter(q => q[1] >= ymax - 1e-6).map(q => q[0]), ax = axePt(p);
+    const c = (ax && g.frame ? g.frame.toL(ax)[0] : (Math.min(...top) + Math.max(...top)) / 2) + off; // milieu d'un trait choisi, sinon milieu du haut
     for (let i = 0; c - i * w > 1e-6 && i < 1000; i++) bands.unshift([c - (i + 1) * w, c - i * w]);
     for (let i = 0; c + i * w < xmax - 1e-6 && i < 1000; i++) bands.push([c + i * w, c + (i + 1) * w]);
   } else for (let i = 0; i < n && i < 2000; i++) bands.push(p.depart === 'd' ? [xmax + off - (i + 1) * w, xmax + off - i * w] : [-off + i * w, -off + (i + 1) * w]);
@@ -2287,13 +2297,28 @@ function render() {
     ctx.beginPath(); ctx.moveTo(SX(a[0]), SY(a[1])); ctx.lineTo(SX(b[0]), SY(b[1])); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle = C.cut; ctx.beginPath(); ctx.arc(SX(a[0]), SY(a[1]), 4, 0, 7); ctx.fill();
   }
+  { const ap = P.pans[cur], q = axePt(ap); // départ au milieu d'un trait : petit triangle orange
+    if (q && (D.tool === 'axe' || D.tool === 'start' || SEL.p)) { const x = SX(q[0]), y = SY(q[1]); ctx.fillStyle = C.cut; ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x + 7, y + 4); ctx.lineTo(x - 7, y + 4); ctx.closePath(); ctx.fill(); } }
+  if (D.mir) { // miroir : formes choisies en surbrillance, axe et aperçu retourné
+    const a = D.mir.a, b = a && D.hover ? D.hover.p : null, s = snapItems(D.mir.items);
+    const shapes = [...s.pans.map(p => [p.w, true]), ...s.drafts.map(q => [q, false]), ...s.cons.map(q => [q, false])];
+    const path = (pts, closed) => { ctx.beginPath(); pts.forEach((q, j) => j ? ctx.lineTo(SX(q[0]), SY(q[1])) : ctx.moveTo(SX(q[0]), SY(q[1]))); if (closed) ctx.closePath(); ctx.stroke(); };
+    ctx.strokeStyle = C.cut; ctx.lineWidth = 2.5; shapes.forEach(([pts, c]) => path(pts, c));
+    if (a) { ctx.fillStyle = C.cut; ctx.beginPath(); ctx.arc(SX(a[0]), SY(a[1]), 4, 0, 7); ctx.fill(); }
+    if (b && Math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-6) {
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), e = 1000 / D.z / L;
+      ctx.setLineDash([10, 4, 2, 4]); ctx.strokeStyle = C.muted; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(SX(a[0] - dx * e), SY(a[1] - dy * e)); ctx.lineTo(SX(b[0] + dx * e), SY(b[1] + dy * e)); ctx.stroke();
+      ctx.setLineDash([6, 4]); ctx.strokeStyle = C.cut; ctx.lineWidth = 1.5; shapes.forEach(([pts, c]) => path(pts.map(q => mirPt(q, a, b)), c)); ctx.setLineDash([]);
+    }
+  }
   if (D.tool === 'cons' && D.consStart && D.hover && !D.space) { // ligne pointillée en cours
     const a = D.consStart, b = D.hover.p;
     ctx.setLineDash([7, 5]); ctx.strokeStyle = C.muted; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(SX(a[0]), SY(a[1])); ctx.lineTo(SX(b[0]), SY(b[1])); ctx.stroke(); ctx.setLineDash([]);
     const lab = fmt(Math.hypot(b[0] - a[0], b[1] - a[1])); ctx.font = '12px "IBM Plex Mono", Consolas, monospace';
     ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(lab, SX((a[0] + b[0]) / 2), SY((a[1] + b[1]) / 2) - 10); ctx.fillStyle = C.muted; ctx.fillText(lab, SX((a[0] + b[0]) / 2), SY((a[1] + b[1]) / 2) - 10);
   }
-  if (D.hover && (D.tool === 'draw' || D.tool === 'cal' || D.tool === 'move' || D.tool === 'measure' || D.tool === 'cons') &&!D.space) {
+  if (D.hover && (D.tool === 'draw' || D.tool === 'cal' || D.tool === 'move' || D.tool === 'copy' || D.tool === 'mirror' || D.tool === 'measure' || D.tool === 'cons') &&!D.space) {
     const [x, y] = [SX(D.hover.p[0]), SY(D.hover.p[1])];
     ctx.strokeStyle = C.cut; ctx.lineWidth = 1.5;
     if (D.hover.kind === 'pt') ctx.strokeRect(x - 6, y - 6, 12, 12);
@@ -2387,13 +2412,17 @@ const HELP = {
   cons: 'Ligne pointillée : clique le début puis la fin (ou tape une longueur / dx;dy puis Entrée). Les lignes s\'enchaînent ; Entrée pour finir. Elles servent de repères et ne comptent pas dans les pans.',
   angle: 'Angle : clique un sommet d\'un pan ou d\'un trait. Tape l\'angle voulu entre ses deux côtés, choisis le côté qui pivote (il garde sa longueur), puis Entrée ou Appliquer.',
   measure: 'Mesurer : clique 2 points (accroche sur le plan et les pans). La distance s\'affiche en mètres et en mm papier.',
+  copy: 'Copier : clique un point de la forme (point de base), puis la destination de la copie (ou tape dx;dy / une longueur puis Entrée). Tu peux enchaîner les copies. <kbd>Ctrl+C</kbd> / <kbd>Ctrl+V</kbd> marchent aussi. <kbd>Échap</kbd> pour finir.',
+  mirror: 'Miroir : clique la forme à retourner (ou sélectionne-la avant), puis 2 points de l\'axe de symétrie. Une copie retournée est créée ; <kbd>Maj</kbd> au 2e clic retourne l\'original. <kbd>Échap</kbd> annule.',
   move: 'Déplacer : clique un point de la forme (point de base, accroché aux coins), puis clique la destination. Tu peux aussi taper dx;dy ou une longueur puis Entrée. <kbd>Échap</kbd> annule.',
+  axe: 'Départ milieu d\'un trait : clique un côté de pan, un trait ou une ligne pointillée. Un joint de tôles est placé sur son milieu (triangle orange) et la pose part de là des deux côtés. Un côté de pan règle ce pan (et le pan collé à ce côté) ; un trait ou une ligne pointillée règle le pan sélectionné. Pour centrer une tôle sur le milieu, mets un débord latéral égal à la moitié de la largeur utile.',
   start: 'Départ tôles : clique la tôle qui doit être la première (T1, surlignée en orange). Le débord latéral du pan s\'applique de ce côté.'
 };
 function cursorFor() { board.style.cursor = D.space || D.tool === 'hand' ? 'grab' : D.tool === 'select' ? 'default' : 'crosshair'; }
 function setTool(t) {
   if (D.orient && t !== 'orient') cancelOrient(true);
   if (D.mv) cancelMove(true);
+  if (t !== 'mirror') D.mir = null;
   if (t !== 'draw' && t !== 'hand') stashCur(true);
   D.tool = t; D.cal = []; D.meas = []; $('#calBox').hidden = true;
   if (t !== 'angle') { D.ang = null; $('#angBar').hidden = true; }
@@ -2624,10 +2653,13 @@ function moveClick(m) {
     // clic sur une forme non sélectionnée : c'est elle qu'on déplace
     if (under) { const u = under.t === 'edge' ? { t: 'pan', pan: under.pan } : under; if (!items.some(x => sameItem(x, u))) { setSelItem(u); items = [u]; } }
     if (!items.length) { status('<span class="err">Clique sur un point d\'une forme (coin, côté ou intérieur).</span>'); return; }
-    const keys = [...selVerts(items)]; if (!keys.length) return;
+    if (!selVerts(items).size) return;
     hist();
-    D.mv = { keys, orig: new Map(keys.map(k => [k, vGet(k).slice()])), excl: new Set(keys), base: h.p, delta: [0, 0] };
-    status('Point de base pris. Clique la destination, ou tape dx;dy / une longueur puis Entrée. <kbd>Échap</kbd> annule.');
+    const copy = D.tool === 'copy';
+    if (copy) items = pasteSnap(snapItems(items));
+    const keys = [...selVerts(items)];
+    D.mv = { keys, orig: new Map(keys.map(k => [k, vGet(k).slice()])), excl: new Set(keys), base: h.p, delta: [0, 0], copy, src: copy ? snapItems(items) : null };
+    status((copy ? 'Copie : point de base pris. ' : 'Point de base pris. ') + 'Clique la destination, ou tape dx;dy / une longueur puis Entrée. <kbd>Échap</kbd> annule.');
     render(); return;
   }
   applyMove(moveTarget(m)); finishMove();
@@ -2641,13 +2673,83 @@ function applyMove(d) {
   $('#coords').textContent = `déplacement ${fmt(d[0])} ; ${fmt(d[1])}  (L ${fmt(Math.hypot(d[0], d[1]))})`;
 }
 function finishMove() {
-  const d = D.mv.delta; D.mv = null; setTool('select');
+  const d = D.mv.delta;
+  if (D.mv.copy) { // copie posée : on garde l'outil Copier pour en poser d'autres
+    const n = D.mv.keys.length; D.mv = null; lastDraftSig = ''; renderGlob(); renderForm(); update();
+    status(`Copie posée à ${fmt(d[0], 3)} ; ${fmt(d[1], 3)} m. Clique une forme pour une autre copie, <kbd>Échap</kbd> pour finir. <kbd>Ctrl+Z</kbd> annule.`);
+    return;
+  }
+  D.mv = null; setTool('select');
   status(`Forme déplacée de ${fmt(d[0], 3)} ; ${fmt(d[1], 3)} m. <kbd>Ctrl+Z</kbd> pour annuler.`);
 }
 function cancelMove(quiet) {
   if (!D.mv) return;
+  if (D.mv.copy) { D.mv = null; restore(HIST.u.pop()); if (!quiet) status('Copie annulée.'); return; } // retire la copie
   applyMove([0, 0]); D.mv = null; HIST.u.pop();
   if (!quiet) { update(); status('Déplacement annulé.'); }
+}
+/* ---------- copier / coller / miroir ---------- */
+// photo des formes (pans entiers, traits, lignes pointillées) pour les dupliquer
+function snapItems(items) {
+  const s = { pans: [], drafts: [], cons: [] }, seen = new Set(), cl = o => JSON.parse(JSON.stringify(o));
+  items.forEach(x => {
+    if (x.t === 'pan' || x.t === 'edge') { if (seen.has(x.pan) || !P.pans[x.pan]) return; seen.add(x.pan); s.pans.push(cl(P.pans[x.pan])); }
+    else if (x.t === 'draft' && P.drafts[x.d]) s.drafts.push(cl(P.drafts[x.d].pts));
+    else if (x.t === 'seg' && P.drafts[x.d] && P.drafts[x.d].pts[x.j + 1]) s.drafts.push(cl([P.drafts[x.d].pts[x.j], P.drafts[x.d].pts[x.j + 1]]));
+    else if (x.t === 'cons' && P.cons[x.c]) s.cons.push(cl(P.cons[x.c]));
+  });
+  return s;
+}
+// ajoute les formes de la photo au dessin ; renvoie les nouvelles formes
+function pasteSnap(s) {
+  const it = [], cl = o => JSON.parse(JSON.stringify(o));
+  s.pans.forEach(p => { const q = cl(p); q.name = 'Pan ' + (P.pans.length + 1); P.pans.push(q); it.push({ t: 'pan', pan: P.pans.length - 1 }); });
+  s.drafts.forEach(pts => { P.drafts.push({ pts: cl(pts) }); it.push({ t: 'draft', d: P.drafts.length - 1 }); });
+  s.cons.forEach(l => { P.cons.push(cl(l)); it.push({ t: 'cons', c: P.cons.length - 1 }); });
+  clearSel(); SEL.extra = it.slice(); const pi = it.find(x => x.t === 'pan'); if (pi) cur = pi.pan;
+  return it;
+}
+const snapPts = s => [...s.pans.flatMap(p => p.w || []), ...s.drafts.flat(), ...s.cons.flat()];
+let CLIP = null;
+function copySel() {
+  const items = moveItems(); if (!items.length) { status('<span class="err">Sélectionne d\'abord une forme à copier.</span>'); return; }
+  CLIP = snapItems(items); const pts = snapPts(CLIP);
+  CLIP.base = [Math.min(...pts.map(q => q[0])), Math.min(...pts.map(q => q[1]))];
+  status('Copié. <kbd>Ctrl+V</kbd> pour coller : la copie suit la souris, clique pour la poser.');
+}
+function pasteClip() {
+  if (!CLIP) { status('<span class="err">Rien à coller : sélectionne une forme puis <kbd>Ctrl+C</kbd>.</span>'); return; }
+  setTool('copy'); hist();
+  const items = pasteSnap(CLIP), keys = [...selVerts(items)];
+  D.mv = { keys, orig: new Map(keys.map(k => [k, vGet(k).slice()])), excl: new Set(keys), base: CLIP.base.slice(), delta: [0, 0], copy: true };
+  if (D.mouse) applyMove(moveTarget(D.mouse));
+  renderGlob(); renderForm(); update();
+  status('Collé : la copie suit la souris (accrochée par son coin bas gauche). Clique pour la poser, ou tape dx;dy puis Entrée. <kbd>Échap</kbd> annule.');
+}
+// miroir : 1) la forme, 2) 1er point de l'axe, 3) 2e point de l'axe
+function mirPt(q, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1, t = ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2;
+  const f = [a[0] + t * dx, a[1] + t * dy]; return r4([2 * f[0] - q[0], 2 * f[1] - q[1]]);
+}
+function mirrorClick(m, keepNot) {
+  const h = placePoint(m, null, D.mir && D.mir.a);
+  if (!D.mir) {
+    let items = moveItems();
+    const under = itemAt(m) || itemAt(h.p);
+    if (under) { const u = under.t === 'edge' ? { t: 'pan', pan: under.pan } : under; if (!items.some(x => sameItem(x, u))) { setSelItem(u); items = [u]; } }
+    if (!items.length) { status('<span class="err">Clique la forme à retourner (ou sélectionne-la avant).</span>'); return; }
+    D.mir = { items, a: null }; update();
+    status('Miroir : clique le 1er point de l\'axe de symétrie.'); return;
+  }
+  if (!D.mir.a) { D.mir.a = h.p; render(); status('Miroir : clique le 2e point de l\'axe (Bloquer axe pour un axe droit). <kbd>Maj</kbd>+clic : retourne l\'original.'); return; }
+  const a = D.mir.a, b = h.p; if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-6) return;
+  hist();
+  let items = D.mir.items;
+  if (!keepNot) items = pasteSnap(snapItems(items)); // par défaut : copie retournée, l'original reste
+  [...selVerts(items)].forEach(k => vSet(k, mirPt(vGet(k), a, b)));
+  items.forEach(x => { if (x.t === 'pan' && P.pans[x.pan]) { const p = P.pans[x.pan]; if (p.depart === 'g') p.depart = 'd'; else if (p.depart === 'd') p.depart = 'g'; } }); // la pose démarre du côté retourné
+  D.mir = null; lastDraftSig = ''; renderGlob(); renderForm(); update();
+  status((keepNot ? 'Forme retournée.' : 'Copie en miroir créée.') + ' Clique une autre forme pour recommencer. <kbd>Ctrl+Z</kbd> annule.');
 }
 /* ---------- outil Angle : cote angulaire à un sommet (comme une cote d'angle de Fusion 360) ---------- */
 function angGeom(a) {
@@ -2954,7 +3056,7 @@ board.addEventListener('pointermove', e => {
   if (D.orient && D.orient.step === 'dir' && !drag) { previewOrient(m); return; }
   if (D.mv && !drag && !D.space) { applyMove(moveTarget(m)); if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); }); return; }
   const lastPt = D.tool === 'draw' ? D.cur[D.cur.length - 1] : D.tool === 'measure' && D.meas.length === 1 ? D.meas[0] : D.tool === 'cons' ? D.consStart : null;
-  D.hover = (D.tool === 'draw' || D.tool === 'cal' || D.tool === 'move' || D.tool === 'measure' || D.tool === 'cons') && !D.space ? placePoint(m, null, lastPt) : null;
+  D.hover = (D.tool === 'draw' || D.tool === 'cal' || D.tool === 'move' || D.tool === 'copy' || D.tool === 'mirror' || D.tool === 'measure' || D.tool === 'cons') && !D.space ? placePoint(m, null, D.mir && D.mir.a ? D.mir.a : lastPt) : null;
   if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); });
 });
 board.addEventListener('pointerup', e => {
@@ -2973,8 +3075,10 @@ board.addEventListener('pointerup', e => {
     const h = placePoint(m, null, null); D.cal.push(h.p); if (D.cal.length > 2) D.cal = [h.p];
     if (D.cal.length === 2) { $('#calBox').hidden = false; $('#calDist').focus(); status(`Distance actuelle : ${fmt(Math.hypot(D.cal[1][0] - D.cal[0][0], D.cal[1][1] - D.cal[0][1]), 3)} m. Saisis la vraie distance.`); }
     render();
-  } else if (D.tool === 'move') {
+  } else if (D.tool === 'move' || D.tool === 'copy') {
     moveClick(m);
+  } else if (D.tool === 'mirror') {
+    mirrorClick(m, e.shiftKey);
   } else if (D.tool === 'fill') {
     fillAt(m);
   } else if (D.tool === 'cons') {
@@ -2992,6 +3096,8 @@ board.addEventListener('pointerup', e => {
   } else if (D.tool === 'orient') {
     if (D.orient && D.orient.step === 'edge') orientPickEdge(m);
     else if (D.orient) { previewOrient(m); validateOrient(); }
+  } else if (D.tool === 'axe') {
+    axeClick(m);
   } else if (D.tool === 'start') {
     const hit = drawPans().reverse().find(([p]) => inside(p.w, m));
     if (hit) setStart(hit[1], m);
@@ -3153,11 +3259,32 @@ function cancelOrient(quiet) {
 }
 $('#orBtn').onclick = () => { if (D.orient) { cancelOrient(); setTool('select'); } else startOrient(); };
 $('#autoOr').onchange = e => { P.settings.autoOrient = e.target.value; save(); };
+// départ depuis le milieu d'un trait : joint de tôles sur ce milieu
+function axeClick(m) {
+  const set = [], he = hitEdge(m);
+  if (he) {
+    set.push([he.pan, { e: he.e }]);
+    const sh = sharedEdges(), k = he.pan + ':' + he.e, o = sh.get(k);
+    if (o) set.push([o.pan, { e: o.e }]);
+    else sh.forEach((v, key) => { if (v.pan === he.pan && v.e === he.e) { const [pi, pe] = key.split(':').map(Number); set.push([pi, { e: pe }]); } });
+  } else {
+    let a = null, b = null;
+    const hs = hitDraftSeg(m); if (hs) { a = P.drafts[hs.d].pts[hs.j]; b = P.drafts[hs.d].pts[hs.j + 1]; }
+    else { const hc = hitCons(m); if (hc >= 0) [a, b] = P.cons[hc]; }
+    if (!a) { status('<span class="err">Clique sur un trait, un côté de pan ou une ligne pointillée.</span>'); return; }
+    const p = P.pans[cur]; if (!p || p.mode !== 'draw') { status('<span class="err">Sélectionne d\'abord le pan à régler, puis clique le trait.</span>'); return; }
+    set.push([cur, { pt: r4([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]) }]);
+  }
+  hist();
+  set.forEach(([i, ax]) => { const p = P.pans[i]; if (p) { p.depart = 'm'; p.axe = ax; } });
+  cur = set[0][0]; clearSel(); SEL.p = true; renderGlob(); renderForm(); update();
+  status(`Départ des tôles au milieu du trait (${set.map(([i]) => esc(P.pans[i].name || 'Pan ' + (i + 1))).join(', ')}) : un joint sur ce point, pose des deux côtés. <kbd>Ctrl+Z</kbd> pour annuler.`);
+}
 // la tôle cliquée devient T1 : la pose part de ce côté du pan
 function setStart(i, m) {
   const p = P.pans[i], r = ALL[i]; if (!r || r.err) return;
   const x = r.frame.toL(m)[0], side = x < r.xmax * 0.4 ? 'g' : x > r.xmax * 0.6 ? 'd' : 'm'; // clic vers le centre : départ au milieu
-  hist(); p.depart = side; cur = i; clearSel(); SEL.p = true; renderForm(); update();
+  hist(); p.depart = side; p.axe = null; cur = i; clearSel(); SEL.p = true; renderForm(); update();
   status(`Première tôle (T1) placée de ce côté. Pour la décaler, règle le <b>débord latéral départ</b> dans le panneau du pan (valeur négative = tôle rentrée).`);
 }
 // suites de segments conservés après suppression de certains (rem = indices des segments retirés)
@@ -3241,6 +3368,9 @@ document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); return; }
+  const inDraw = !$('#viewDraw').hidden && $('#viewDraw').offsetParent !== null && !String(window.getSelection() || '');
+  if ((e.ctrlKey || e.metaKey) && k === 'c' && inDraw && moveItems().length) { e.preventDefault(); copySel(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === 'v' && inDraw && CLIP) { e.preventDefault(); pasteClip(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === ' ') { e.preventDefault(); if (!D.space) { D.space = true; D.hover = null; cursorFor(); render(); } return; }
   if (D.tool === 'select' && e.key.startsWith('Arrow') && selItems().length) {
@@ -3250,7 +3380,10 @@ document.addEventListener('keydown', e => {
   if (/^[\d.,@<;+*/()-]$/.test(e.key) && ((D.tool === 'draw' && D.cur.length) || (D.tool === 'select' && selItems().length) || D.mv || D.tool === 'cons')) { e.preventDefault(); const c = $('#cmd'); c.focus(); c.value += e.key; c.dispatchEvent(new Event('input')); return; }
   if (e.key === 'Escape') {
     if (D.orient) { cancelOrient(); setTool('select'); status('Orientation annulée.'); }
+    else if (D.mv && D.mv.copy) { cancelMove(); setTool('select'); }
     else if (D.mv) { cancelMove(); setTool('select'); status('Déplacement annulé.'); }
+    else if (D.mir) { D.mir = null; update(); status('Miroir annulé.'); }
+    else if (D.tool === 'copy' || D.tool === 'mirror') setTool('select');
     else if (D.consStart) { D.consStart = null; render(); }
     else if (D.cur.length) { stashCur(); update(); }
     else { clearSel(); D.cal = []; $('#calBox').hidden = true; update(); }
@@ -3268,11 +3401,14 @@ document.addEventListener('keydown', e => {
   else if (k === 'p') setTool('para');
   else if (k === 'o') startOrient();
   else if (k === 'm') setTool('move');
+  else if (k === 'c') setTool('copy');
+  else if (k === 'i') setTool('mirror');
   else if (k === 'r') setTool('measure');
   else if (k === 'a') setTool('angle');
   else if (k === 'l') setTool('cons');
   else if (k === 'f') setTool('fill');
   else if (k === 't') setTool('start');
+  else if (k === 'x') setTool('axe');
 });
 document.addEventListener('keyup', e => { if (e.key === ' ' && D.space) { D.space = false; cursorFor(); render(); } });
 

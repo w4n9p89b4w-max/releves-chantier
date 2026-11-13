@@ -6,7 +6,7 @@ Répondre en français, simplement (l'utilisateur n'est pas développeur).
 
 ## Fichiers
 - `public/index.html` : toute l'appli (HTML + CSS + JS dans un seul fichier). C'est la version de référence.
-- `public/calepinage.html` : calepinage toiture (copie de G:\OneDrive\Bureau\teste calepinage\calepinage.html, mêmes modifs ; ici les bibliothèques viennent de public/lib au lieu du CDN). `?embed=1` = ouvert dans Relevés : projet reçu par postMessage (calep-ready → calep-open), renvoyé à chaque modif (calep-save, après une action de l'utilisateur), pas de localStorage.
+- `public/calepinage.html` : calepinage toiture (copie de G:\OneDrive\Bureau\teste calepinage\calepinage.html, mêmes modifs ; ici les bibliothèques viennent de public/lib au lieu du CDN). Etienne modifie aussi son fichier G: lui-même : à chaque mise à jour, recopier son fichier (remplacer les 4 URL cdnjs par lib/…). `?embed=1` = ouvert dans Relevés : projet reçu par postMessage (calep-ready → calep-open), renvoyé à chaque modif (calep-save, après une action de l'utilisateur), pas de localStorage.
 - `public/portail_pro.html` : copie de X:\Commercial\portail_pro.html (Portail Pro). `?embed=tole` = seule la page Tôle perforée (menu caché, pas d'appel /api/save ni /api/load) + bouton « Enregistrer dans le dossier » (rcSaveTole : rapport A4 paysage dessiné sur canvas par toleReportImage à partir de tolePageReportHTML({dataOnly:true}), envoyé par postMessage pp-report). À recopier si Etienne modifie son fichier.
 - `public/sw.js` : mode hors ligne. **Changer le numéro `releves-vNN` à chaque mise à jour de l'appli**, sinon l'iPad garde l'ancienne version.
 - `public/manifest.webmanifest`, icônes : installation sur l'écran d'accueil.
