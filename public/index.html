@@ -944,6 +944,19 @@ document.addEventListener('click', e => {
   el.dataset.kbOpen = '1'; el.dataset.kbBy = lastPtr;
   try{ const n = el.value.length; el.setSelectionRange(n, n); }catch{}
 }, true);
+/* Clavier rangé (bouton de l'iPad) : la case se désélectionne aussi. On le voit à la hauteur visible de l'écran,
+   qui remonte quand le clavier disparaît ; seulement si le clavier s'était bien ouvert pour cette case. */
+if(window.visualViewport){
+  let kbSeen = false;
+  const full = () => visualViewport.height * visualViewport.scale >= window.innerHeight - 90;
+  visualViewport.addEventListener('resize', () => {
+    const a = document.activeElement;
+    if(!a || !a.matches?.('input:not([type=checkbox]):not([type=radio]), textarea')){ kbSeen = false; return; }
+    if(!full()) kbSeen = true;
+    else if(kbSeen){ kbSeen = false; a.blur(); }
+  });
+  document.addEventListener('focusin', () => { kbSeen = !full(); }, true);
+}
 document.addEventListener('focusout', e => {
   const el=e.target; if(!el.dataset?.kb || SYNC.role==='viewer') return;
   delete el.dataset.kbOpen; delete el.dataset.kbBy; el.readOnly = true;
