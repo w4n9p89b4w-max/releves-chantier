@@ -352,7 +352,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .orient button{min-height:38px;padding:0 14px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:14px}
 .orient button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 /* rapport imprimé en paysage : photos 4 par ligne, croquis 2 par ligne */
-@media print{ body.land .rep .pics{grid-template-columns:repeat(4,1fr)!important} body.land .rep .pics.cr{grid-template-columns:repeat(2,1fr)!important} body.land .rep figure img{max-height:52mm} body.land .rep .pics.cr figure img{max-height:82mm} body.land .rep .kv{grid-template-columns:repeat(4,1fr)} }
+@media print and (orientation: landscape){ .rep .pics{grid-template-columns:repeat(4,1fr)!important} .rep figure img{max-height:52mm} .rep .kv{grid-template-columns:repeat(4,1fr)} }
 .exp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:12px 14px;min-height:56px}
 .exp-list button b{font-size:16px}
 .exp-list button span{font-size:13px;color:var(--muted)}
@@ -376,7 +376,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
   .rep .pics{grid-template-columns:repeat(3,1fr)!important;gap:8px}
   .rep .pics.cr{grid-template-columns:repeat(2,1fr)!important}
   .rep figure img{max-height:62mm;object-fit:contain;background:#fff}
-  .rep .pics.cr figure img{max-height:95mm}
+  .rep .pics.cr figure img{max-height:85mm}   /* tient aussi sur une page en paysage */
   .rep figcaption{font-size:8pt;margin-top:2px}
 }
 </style>
@@ -419,13 +419,13 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
   <div class="box" role="dialog" aria-modal="true" aria-labelledby="expTitle" style="background:var(--surface);border-radius:16px;width:min(520px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <h3 id="expTitle" style="font-size:26px">Exporter le dossier</h3>
     <div class="orient" role="group" aria-label="Orientation des PDF">
-      <span>PDF en</span>
+      <span>Rapport du zip en</span>
       <button type="button" data-orient="portrait">Portrait</button>
       <button type="button" data-orient="landscape">Paysage</button>
     </div>
     <div class="exp-list">
       <button type="button" data-exp="zip"><b>Tout exporter (.zip)</b><span>Un seul fichier : le rapport en PDF + toutes les photos, les croquis et les fichiers joints, rangés dans des dossiers.</span></button>
-      <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
+      <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Portrait ou paysage : au choix dans la fenêtre d’impression. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
       <button type="button" data-exp="json"><b>Fichier JSON</b><span>Copie complète du dossier (avec photos et croquis), réimportable avec « Restaurer ».</span></button>
       <button type="button" data-exp="calepinage"><b>Projet calepinage (.json)</b><span>Fiche chantier prête pour le calepinage : nom, prénom, adresse, ville / code postal, téléphone, mail, tôle et pliages. Dans le calepinage : « Ouvrir (.json) ».</span></button>
       <button type="button" data-exp="label"><b>Étiquette contact (62 mm de large)</b><span>Nom, téléphone, adresse et date de visite, pour l’imprimante d’étiquettes.</span></button>
@@ -931,18 +931,22 @@ document.addEventListener('mousedown', e => {
   const el = e.target.closest?.('[data-kb]');
   if(el && document.activeElement !== el) e.preventDefault();
 }, true);
+/* Une case ouverte au Pencil reste sélectionnée sans clavier (barre « Griffonner » de l'iPad). Si on la retouche
+   au doigt, on la referme puis rouvre pour que le clavier sorte ; et dessiner referme la case sélectionnée. */
+let lastPtr = 'mouse';
+document.addEventListener('pointerdown', e => { lastPtr = e.pointerType || 'mouse'; }, true);
 document.addEventListener('click', e => {
   const el = e.target.closest?.('[data-kb]'); if(!el || SYNC.role==='viewer') return;
   el.readOnly = false;
-  if(document.activeElement === el && el.dataset.kbOpen) return;   // déjà en saisie : laisser placer le curseur
+  if(document.activeElement === el && el.dataset.kbOpen && el.dataset.kbBy === lastPtr) return;   // déjà en saisie : laisser placer le curseur
   if(document.activeElement === el) el.blur();
   el.focus();
-  el.dataset.kbOpen = '1';
+  el.dataset.kbOpen = '1'; el.dataset.kbBy = lastPtr;
   try{ const n = el.value.length; el.setSelectionRange(n, n); }catch{}
 }, true);
 document.addEventListener('focusout', e => {
   const el=e.target; if(!el.dataset?.kb || SYNC.role==='viewer') return;
-  delete el.dataset.kbOpen; el.readOnly = true;
+  delete el.dataset.kbOpen; delete el.dataset.kbBy; el.readOnly = true;
 }, true);
 
 /* ---------- Champs liés aux données ---------- */
@@ -1688,6 +1692,7 @@ function bindCanvas(cv){
     }
   }, {passive:false});
 
+  cv.addEventListener('pointerdown', () => { const a = document.activeElement; if(a && a.matches?.('input, textarea')) a.blur(); }, true);
   cv.addEventListener('pointerdown', e => {
     if(E.pencilOnly && e.pointerType==='touch') return;
     if(G.lock && e.pointerType==='touch') return;
@@ -1984,8 +1989,7 @@ function printWith(mode){
   let st = $('#pageStyle'); if(!st){ st=document.createElement('style'); st.id='pageStyle'; document.head.appendChild(st); }
   let h = 60;
   if(mode==='label'){ const ls=$('#labelSheet'); ls.style.cssText='display:block;position:absolute;left:-9999px;top:0'; h = fitLabel(ls.querySelector('.label')); ls.style.cssText=''; ls.querySelector('.label').style.height = h+'mm'; }
-  document.body.classList.toggle('land', mode!=='label' && ORIENT.get()==='landscape');
-  st.textContent = mode==='label' ? `@page{size:62mm ${h}mm;margin:0}` : `@page{size:A4 ${ORIENT.get()};margin:12mm}`;
+  st.textContent = mode==='label' ? `@page{size:62mm ${h}mm;margin:0}` : '@page{margin:12mm}';   // portrait / paysage : au choix dans la fenêtre d'impression
   document.body.classList.toggle('print-label', mode==='label');
   const done = () => { document.body.classList.remove('print-label'); window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);
