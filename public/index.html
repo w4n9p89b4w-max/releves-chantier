@@ -583,7 +583,14 @@ const Sync = {
         if((have.has(r.id) && (r.rev == null || have.get(r.id) === r.rev)) || out.has('media:'+r.id) || !known.has(r.chantierId)) continue;   // nouveau, ou calepinage modifié au bureau
         const m = await this.api('GET', '/media/'+encodeURIComponent(r.id));
         if(!m || m.id!==r.id) continue;
-        await DB.rawPut('media', m); if(m.kind==='suivi'){ S.suivi[m.chantierId] = m.rel||[]; ns++; continue; } n++;
+        await DB.rawPut('media', m);
+        if(m.kind==='suivi'){
+          S.suivi[m.chantierId] = m.rel||[]; ns++;
+          const c = byId(m.chantierId);
+          if(applyStatutBureau(c, m.statut)){ await DB.put('chantiers', c); if(S.cur?.id===c.id){ const sel=$('#f_statut'); if(sel) sel.value=c.statut; } }
+          continue;
+        }
+        n++;
         if(S.cur?.id===m.chantierId){ S.media = S.media.filter(x=>x.id!==m.id); S.media.push(m); S.media.sort((a,b)=>a.created-b.created); renderGallery(); renderStrip(); }
       }
       if(ns) renderList();
@@ -767,9 +774,26 @@ function relHref(c, m){
 }
 async function loadSuivi(){
   try{
-    if(SYNC.role==='viewer'){ if(!SYNC.token) return; S.suivi = Object.fromEntries((await Sync.api('GET', '/suivi')).map(x=>[x.chantierId, x.rel||[]])); }
+    if(SYNC.role==='viewer'){
+      if(!SYNC.token) return;
+      const r = await Sync.api('GET', '/suivi');
+      S.suivi = Object.fromEntries(r.map(x=>[x.chantierId, x.rel||[]]));
+      for(const x of r) applyStatutBureau(byId(x.chantierId), x.statut);   // statut changé au bureau, pas encore repassé par la tablette
+    }
     else S.suivi = Object.fromEntries((await DB.all('media')).filter(m=>m.kind==='suivi').map(m=>[m.chantierId, m.rel||[]]));
   }catch{}
+}
+/* Statut changé depuis l'ordinateur ou l'iPhone : il est noté dans le suivi du dossier ({v, t}) ;
+   il l'emporte sur celui du dossier s'il est plus récent (statutT = date du dernier changement de statut). */
+function applyStatutBureau(c, st){
+  if(!c || !st || !STATUTS[st.v] || st.t <= (c.statutT || 0)) return false;
+  c.statut = st.v; c.statutT = st.t; return true;
+}
+async function changeStatutBureau(c, v){
+  const t = Date.now(), old = {statut:c.statut, statutT:c.statutT};
+  c.statut = v; c.statutT = t; renderList();
+  try{ await Sync.api('POST', `/suivi/${encodeURIComponent(c.id)}/statut`, {statut:v, t}); toast(`Statut : ${STATUTS[v]} (la tablette sera mise à jour)`); }
+  catch(e){ Object.assign(c, old); renderList(); const sel = $('#f_statut'); if(sel) sel.value = c.statut; toast(navigator.onLine ? 'Statut non enregistré : '+e.message : 'Statut non enregistré : pas de connexion', 4000); }
 }
 function renderRecap(){
   const el = $('#recap'), real = S.list.filter(c=>!c.exemple);
@@ -1084,7 +1108,7 @@ function renderMain(){
 function lockIfViewer(){
   if(SYNC.role!=='viewer') return;
   $$('#main input, #main select, #main textarea, #clientPane input, #clientPane select, #clientPane textarea').forEach(el => {
-    if(el.type==='file') return;
+    if(el.type==='file' || el.id==='f_statut') return;   // le statut reste modifiable au bureau
     if(el.tagName==='SELECT' || el.type==='checkbox' || el.type==='date') el.disabled = true; else el.readOnly = true;
     if(el.placeholder) el.placeholder = '—';
   });
@@ -1099,8 +1123,11 @@ new MutationObserver(ms => { for(const m of ms) for(const n of m.addedNodes) if(
 window.addEventListener('resize', () => growAll(document));
 function onField(e){
   const el = e.target;
+  if(el.dataset.path==='statut' && SYNC.role==='viewer'){ changeStatutBureau(S.cur, el.value); return; }
   if(el.dataset.path){
+    if(el.dataset.path==='statut') S.cur.statutT = Date.now();
     set(S.cur, el.dataset.path, el.type==='checkbox' ? el.checked : el.value); touch();
+    if(el.dataset.path==='statut') renderList();
     if(el.dataset.path==='nom' || el.dataset.path==='prenom' || el.dataset.path==='entreprise'){
       S.cur.client = [S.cur.nom, S.cur.prenom].map(x=>(x||'').trim()).filter(Boolean).join(' ');
       $('#title').textContent = fullName(S.cur) || 'Nouveau client';

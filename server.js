@@ -87,7 +87,7 @@ api.get('/media-ids', (req, res) => res.json(q.mediaIds.all()));
 // --- Suivi client : relances (appel / message / mail) notées depuis l'iPhone ou le PC ---
 // Un élément 'suivi-<dossier>' par dossier (kind 'suivi', rel = [{m, t}]) ; la tablette le récupère comme les autres (rev).
 const RELANCE = new Set(['tel', 'sms', 'mail']);
-api.get('/suivi', (req, res) => res.json(q.suiviAll.all().map(r => { const m = JSON.parse(r.json); return { chantierId: m.chantierId, rel: m.rel || [] }; })));
+api.get('/suivi', (req, res) => res.json(q.suiviAll.all().map(r => { const m = JSON.parse(r.json); return { chantierId: m.chantierId, rel: m.rel || [], statut: m.statut || null }; })));
 const editSuivi = db.transaction((cid, fn) => {
   const id = 'suivi-' + cid, row = q.mediaOne.get(id);
   const m = row ? JSON.parse(row.json) : { id, chantierId: cid, kind: 'suivi', rel: [], created: Date.now() };
@@ -99,6 +99,17 @@ api.post('/suivi/:cid', (req, res) => {
   const { m, t } = req.body || {};
   if (!validId(req.params.cid) || !RELANCE.has(m) || !Number.isFinite(t)) return res.status(400).json({ error: 'Relance invalide' });
   res.json(editSuivi(req.params.cid, s => { if (!s.rel.some(r => r.t === t && r.m === m)) s.rel.push({ m, t }); s.rel.sort((a, b) => a.t - b.t); }));
+});
+// Statut changé depuis l'ordinateur / l'iPhone : noté dans le suivi (la tablette l'applique à son dossier) et recopié dans le dossier du serveur
+const STATUTS = new Set(['chiffrer', 'devis', 'signe', 'perdu']);
+const chantierOne = db.prepare('SELECT json FROM chantiers WHERE id = ?');
+api.post('/suivi/:cid/statut', (req, res) => {
+  const { statut, t } = req.body || {};
+  if (!validId(req.params.cid) || !STATUTS.has(statut) || !Number.isFinite(t)) return res.status(400).json({ error: 'Statut invalide' });
+  const m = editSuivi(req.params.cid, s => { s.statut = { v: statut, t }; });
+  const row = chantierOne.get(req.params.cid);
+  if (row) { const c = JSON.parse(row.json); c.statut = statut; c.statutT = t; q.putChantier.run(c.id, JSON.stringify(c), Number(c.updated) || Date.now()); }
+  res.json(m);
 });
 api.delete('/suivi/:cid/:t', (req, res) => {
   const t = +req.params.t;
