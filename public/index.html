@@ -570,7 +570,15 @@ const Sync = {
       const have = new Map((await DB.all('media')).map(m=>[m.id, m.rev ?? null]));
       const out = new Set((await DB.all('outbox')).map(o=>o.id));
       const known = new Set(S.list.filter(c=>!c.exemple).map(c=>c.id));
-      let n = 0, ns = 0;
+      let n = 0, ns = 0, nd = 0;
+      // ajouts du bureau supprimés depuis le bureau : on les retire aussi ici
+      const onSrv = new Set(ids.map(r=>r.id));
+      for(const m of await DB.all('media')){
+        if(!m.ajoutBureau || onSrv.has(m.id) || out.has('media:'+m.id) || !known.has(m.chantierId)) continue;
+        await DB.rawDel('media', m.id); nd++;
+        if(S.cur?.id===m.chantierId){ S.media = S.media.filter(x=>x.id!==m.id); }
+      }
+      if(nd){ renderGallery(); renderStrip(); }
       for(const r of ids){
         if((have.has(r.id) && (r.rev == null || have.get(r.id) === r.rev)) || out.has('media:'+r.id) || !known.has(r.chantierId)) continue;   // nouveau, ou calepinage modifié au bureau
         const m = await this.api('GET', '/media/'+encodeURIComponent(r.id));
@@ -1127,18 +1135,21 @@ function renderContact(){
 function renderGallery(){
   const g = $('#gallery'); if(!g) return;
   const items = S.media.filter(x=>x.kind==='photo' || x.kind==='fichier');
+  // consultation : on ne peut supprimer que ce qui a été ajouté depuis le bureau (le reste appartient à la tablette)
+  const delBtn = x => SYNC.role!=='viewer' ? '<button class="btn sm danger" type="button" data-del>Supprimer</button>'
+    : x.ajoutBureau ? '<button class="btn sm danger" type="button" data-delb>Supprimer</button>' : '';
   const RO = SYNC.role==='viewer' ? ' readonly' : '';
   g.innerHTML = items.length ? items.map(x => x.kind==='photo' ? `
     <div class="tile" data-id="${x.id}">
       ${x.ops?.length?'<span class="tag">Annotée</span>':''}
       <img src="${x.data}" alt="${esc(x.legende||'Photo')}" data-view loading="lazy">
       <input value="${esc(x.legende)}" placeholder="${RO?'':'Légende…'}" data-leg aria-label="Légende"${RO}>
-      <div class="acts"><button class="btn sm" type="button" data-annot>Annoter</button><button class="btn sm danger" type="button" data-del>Supprimer</button></div>
+      <div class="acts"><button class="btn sm" type="button" data-annot>Annoter</button>${delBtn(x)}</div>
     </div>` : `
     <div class="tile" data-id="${x.id}">
       <div class="doc"><span class="ext">${esc((x.name.split('.').pop()||'?').slice(0,4).toUpperCase())}</span><b>${esc(x.name)}</b><span class="note">${size(x.size||0)}</span></div>
       <input value="${esc(x.legende)}" placeholder="${RO?'':'Note sur le fichier…'}" data-leg aria-label="Note"${RO}>
-      <div class="acts"><button class="btn sm" type="button" data-open>Ouvrir</button><button class="btn sm danger" type="button" data-del>Supprimer</button></div>
+      <div class="acts"><button class="btn sm" type="button" data-open>Ouvrir</button>${delBtn(x)}</div>
     </div>`).join('')
     : `<p class="note" style="grid-column:1/-1;margin:0">Aucune photo ni fichier pour l’instant.</p>`;
   g.oninput = async e => { const t=e.target.closest('[data-leg]'); if(!t) return; const x=S.media.find(m=>m.id===t.closest('.tile').dataset.id); x.legende=t.value; await DB.put('media',x); };
@@ -1147,6 +1158,12 @@ function renderGallery(){
     if(e.target.closest('[data-view]')){ const v=$('#viewer'); $('img',v).src=x.data; v.hidden=false; }
     if(e.target.closest('[data-annot]')){ loadSheet(x); $('#drawSec').scrollIntoView({behavior:'smooth'}); }
     if(e.target.closest('[data-open]')) openFile(x);
+    const db = e.target.closest('[data-delb]');
+    if(db) armed(db, 'Confirmer', async () => {
+      try{ await Sync.api('DELETE', '/media/'+encodeURIComponent(x.id)); }
+      catch(err){ toast(navigator.onLine ? 'Non supprimé : '+err.message : 'Non supprimé : pas de connexion'); return; }
+      S.media = S.media.filter(m=>m.id!==x.id); renderGallery(); toast('Supprimé (aussi sur la tablette)');
+    });
     const d = e.target.closest('[data-del]');
     if(d) armed(d, 'Confirmer', async () => {
       await DB.del('media', x.id); S.media = S.media.filter(m=>m.id!==x.id);
@@ -1189,7 +1206,7 @@ function openAddDlg(){
     z.ondragleave = e => { if(!z.contains(e.relatedTarget)) z.classList.remove('over'); };
     z.ondrop = e => { e.preventDefault(); z.classList.remove('over'); addSend([...e.dataTransfer.files]); };
     d.addEventListener('dragover', e => e.preventDefault());
-    d.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); addSend([...e.dataTransfer.files]); });
+    d.addEventListener('drop', e => { e.preventDefault(); if(z.contains(e.target)) return; z.classList.remove('over'); addSend([...e.dataTransfer.files]); });   // la zone gère déjà son propre lâcher
     $('#addIn').onchange = e => { addSend([...e.target.files]); e.target.value=''; };
     $('#addClose').onclick = () => { d.hidden = true; };
     d.addEventListener('click', e => { if(e.target === d) d.hidden = true; });
@@ -1234,7 +1251,8 @@ async function shrink(file, max=1800){
    la tablette le récupère ensuite toute seule (Sync.pull). */
 async function saveNewMedia(m, what){
   if(SYNC.role==='viewer'){
-    try{ await Sync.api('PUT', '/media/'+encodeURIComponent(m.id), {...m, ajoutBureau:true}); }
+    m.ajoutBureau = true;
+    try{ await Sync.api('PUT', '/media/'+encodeURIComponent(m.id), m); }
     catch(e){ const msg = navigator.onLine ? `non envoyé : ${e.message}` : 'non envoyé : pas de connexion'; toast(`${what} ${msg}`); return msg; }
   } else await DB.put('media', m);
   S.media.push(m); touch(); toast(SYNC.role==='viewer' ? `${what} envoyé à la tablette` : `${what} ajouté`);
