@@ -181,6 +181,7 @@ body.viewer .f input[readonly], body.viewer .f textarea[readonly], body.viewer .
 .f label{font-size:13px;font-weight:600;color:var(--muted)}
 .f input,.f select,.f textarea{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
 .f input:focus,.f select:focus,.f textarea:focus{border-color:var(--accent);background:var(--surface);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+.f textarea.grow{resize:none;overflow:hidden;line-height:1.35;display:block}
 .f input.big{font:600 22px var(--f-display);letter-spacing:.01em}
 .unit{position:relative}
 .unit input{padding-right:44px;font-family:var(--f-num)}
@@ -824,7 +825,7 @@ function clientHTML(side){
         ${field('entreprise','Entreprise',{ph:'si client professionnel'})}
         ${field('tel','Téléphone',{type:'tel', ph:'0692 …'})}
         ${field('email','E-mail',{type:'email'})}
-        ${field('adresse','Adresse',{ph:'N° et rue, lieu-dit'})}
+        ${field('adresse','Adresse',{ph:'N° et rue, lieu-dit', multi:true})}
         <div class="cp-ville">${field('cp','Code postal',{ph:'97410', num:true})}${field('ville','Ville',{ph:'ex. Saint-Pierre'})}</div>
         ${field('date','Date de visite',{type:'date'})}
         ${field('statut','Statut',{options:Object.entries(STATUTS), noBlank:true})}
@@ -839,7 +840,7 @@ function clientHTML(side){
         ${field('entreprise','Entreprise',{ph:'si client professionnel'})}
         ${field('tel','Téléphone',{type:'tel', ph:'0692 …'})}
         ${field('email','E-mail',{type:'email'})}
-        ${field('adresse','Adresse',{wide:true, ph:'N° et rue, lieu-dit'})}
+        ${field('adresse','Adresse',{wide:true, ph:'N° et rue, lieu-dit', multi:true})}
         ${field('cp','Code postal',{ph:'97410', num:true})}
         ${field('ville','Ville',{ph:'ex. Saint-Pierre'})}
         ${field('date','Date de visite',{type:'date'})}
@@ -977,6 +978,7 @@ function field(path, label, opt={}){
       `<label class="ck"><input type="checkbox" data-multi="${path}" value="${esc(o)}" ${arr.includes(o)?'checked':''}>${esc(o)}</label>`).join('')}</div></div>`;
   }
   if(opt.check) return `<label class="check${cls}"><input type="checkbox" id="${id}" data-path="${path}" ${v?'checked':''}>${label}</label>`;
+  if(opt.multi) return `<div class="f${cls}"><label for="${id}">${label}</label><textarea id="${id}" data-path="${path}" class="grow" rows="1" placeholder="${esc(opt.ph||'')}" autocomplete="off">${esc(v)}</textarea></div>`;
   const padKind = opt.unit ? 'dec' : opt.num ? 'cp' : opt.type==='tel' ? 'tel' : '';
   const inp = `<input id="${id}" data-path="${path}" value="${esc(v)}" type="${opt.type||'text'}" ${padKind?`data-pad="${padKind}" data-unit="${opt.unit||''}" data-label="${esc(label)}"${TOUCH?' readonly':''}`:''} ${opt.unit?'inputmode="decimal"':opt.num?'inputmode="numeric" maxlength="5"':''} ${opt.big?'class="big"':''} placeholder="${esc(opt.ph||'')}" autocomplete="off">`;
   return `<div class="f${cls}"><label for="${id}">${label}</label>${opt.unit?`<div class="unit">${inp}<span>${opt.unit}</span></div>`:inp}</div>`;
@@ -1055,13 +1057,20 @@ function renderMain(){
 }
 function lockIfViewer(){
   if(SYNC.role!=='viewer') return;
-  $$('#main input, #main select, #main textarea, #clientPane input, #clientPane select').forEach(el => {
+  $$('#main input, #main select, #main textarea, #clientPane input, #clientPane select, #clientPane textarea').forEach(el => {
     if(el.type==='file') return;
     if(el.tagName==='SELECT' || el.type==='checkbox' || el.type==='date') el.disabled = true; else el.readOnly = true;
     if(el.placeholder) el.placeholder = '—';
   });
   $$('#main [data-mode]').forEach(b => b.disabled = true);
 }
+/* cases « adresse » : hauteur ajustée au texte (2 lignes si l'adresse est longue), Entrée ne crée pas de ligne */
+const growTA = el => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; };
+const growAll = root => root.querySelectorAll?.('textarea.grow').forEach(growTA);
+document.addEventListener('input', e => { if(e.target.matches?.('textarea.grow')){ if(/\n/.test(e.target.value)) e.target.value = e.target.value.replace(/\s*\n\s*/g, ' '); growTA(e.target); } }, true);
+document.addEventListener('keydown', e => { if(e.key==='Enter' && e.target.matches?.('textarea.grow')){ e.preventDefault(); e.target.blur(); } }, true);
+new MutationObserver(ms => { for(const m of ms) for(const n of m.addedNodes) if(n.nodeType===1) requestAnimationFrame(()=>growAll(n.matches?.('textarea.grow') ? n.parentNode : n)); }).observe(document.body, {childList:true, subtree:true});
+window.addEventListener('resize', () => growAll(document));
 function onField(e){
   const el = e.target;
   if(el.dataset.path){
@@ -1980,7 +1989,7 @@ function labelHTML(c){
     <div class="lb-name" data-fit="36">${esc(fullName(c)||'Client')}</div>
     ${c.entreprise && c.entreprise!==fullName(c) ? `<div class="lb-ent" data-fit="22">${esc(c.entreprise)}</div>` : ''}
     ${c.tel?`<div class="lb-tel" data-fit="34">${esc(c.tel)}</div>`:''}
-    ${fullAdr(c)?`<div class="lb-adr">${c.adresse?`<div data-fit="24">${esc(c.adresse)}</div>`:''}${c.cp||c.ville?`<div data-fit="24">${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}</div>`:''}
+    ${fullAdr(c)?`<div class="lb-adr">${c.adresse?`<div data-fit="24" data-split="11">${esc(c.adresse)}</div>`:''}${c.cp||c.ville?`<div data-fit="24">${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}</div>`:''}
     ${c.email?`<div class="lb-mail" data-fit="20">${esc(c.email)}</div>`:''}
     <div class="lb-bot"><span>Visite ${esc(d)}</span><span>${esc(STATUTS[c.statut]||'')}</span></div>
   </div>`;
@@ -1990,10 +1999,23 @@ function labelHTML(c){
 function fitLabel(label){
   if(!label) return 60;
   const avail = label.clientWidth - parseFloat(getComputedStyle(label).paddingLeft) - parseFloat(getComputedStyle(label).paddingRight);
-  label.querySelectorAll('[data-fit]').forEach(el=>{
+  const fit = el => {
     el.style.fontSize='20pt'; el.style.width='max-content';
-    const w = el.getBoundingClientRect().width || 1;
-    el.style.fontSize = Math.max(6, Math.min(+el.dataset.fit, 20 * avail / w * 0.98)).toFixed(2) + 'pt'; el.style.width='';
+    const w = el.getBoundingClientRect().width || 1, pt = Math.max(6, Math.min(+el.dataset.fit, 20 * avail / w * 0.98));
+    el.style.fontSize = pt.toFixed(2) + 'pt'; el.style.width=''; return pt;
+  };
+  label.querySelectorAll('[data-fit]').forEach(el=>{
+    // ligne trop longue (adresse) : coupée en 2 lignes au mot le plus proche du milieu, plutôt qu'écrite tout petit
+    if(el.dataset.split && fit(el) < +el.dataset.split){
+      const t = el.textContent.trim(), sp = [...t.matchAll(/ /g)].map(m=>m.index);
+      if(!sp.length) return;
+      const cut = sp.reduce((a,b)=>Math.abs(b-t.length/2) < Math.abs(a-t.length/2) ? b : a);
+      const mk = txt => { const d = document.createElement('div'); d.dataset.fit = el.dataset.fit; d.textContent = txt; return d; };
+      const a = mk(t.slice(0, cut)), b = mk(t.slice(cut+1)); el.replaceWith(a, b);
+      const pa = fit(a), pb = fit(b), pm = Math.min(pa, pb); a.style.fontSize = b.style.fontSize = pm.toFixed(2)+'pt';   // même taille sur les 2 lignes
+      return;
+    }
+    if(!el.dataset.split) fit(el);
   });
   return Math.ceil(label.getBoundingClientRect().height * 25.4 / 96);
 }
