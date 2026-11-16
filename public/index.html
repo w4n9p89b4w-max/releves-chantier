@@ -876,7 +876,8 @@ function renderSide(){
 }
 
 /* ---------- Pavé numérique pour les cases de chiffres (iPad) ---------- */
-const TOUCH = window.matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 1;
+// tablette / téléphone : écran tactile SANS souris (un PC portable à écran tactile reste un ordinateur)
+const TOUCH = window.matchMedia('(pointer:coarse)').matches || (navigator.maxTouchPoints > 1 && !window.matchMedia('(pointer:fine)').matches);
 const NP = {el:null, v:''};
 (() => {
   const keys = ['7','8','9','4','5','6','1','2','3',',','0','del'];
