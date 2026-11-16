@@ -347,6 +347,12 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .label .lb-bot{margin-top:auto;display:flex;justify-content:space-between;font:600 8.5pt var(--f-body);border-top:.3mm dashed #000;padding-top:1mm}
 #labelSheet{display:none}
 .exp-list{display:flex;flex-direction:column;gap:10px}
+.orient{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
+.orient span{margin-right:4px}
+.orient button{min-height:38px;padding:0 14px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:14px}
+.orient button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+/* rapport imprimé en paysage : photos 4 par ligne, croquis 2 par ligne */
+@media print{ body.land .rep .pics{grid-template-columns:repeat(4,1fr)!important} body.land .rep .pics.cr{grid-template-columns:repeat(2,1fr)!important} body.land .rep figure img{max-height:52mm} body.land .rep .pics.cr figure img{max-height:82mm} body.land .rep .kv{grid-template-columns:repeat(4,1fr)} }
 .exp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:12px 14px;min-height:56px}
 .exp-list button b{font-size:16px}
 .exp-list button span{font-size:13px;color:var(--muted)}
@@ -412,6 +418,11 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 <div id="exportDlg" hidden style="position:fixed;inset:0;z-index:57;background:rgba(10,15,18,.5);display:flex;align-items:center;justify-content:center;padding:16px">
   <div class="box" role="dialog" aria-modal="true" aria-labelledby="expTitle" style="background:var(--surface);border-radius:16px;width:min(520px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <h3 id="expTitle" style="font-size:26px">Exporter le dossier</h3>
+    <div class="orient" role="group" aria-label="Orientation des PDF">
+      <span>PDF en</span>
+      <button type="button" data-orient="portrait">Portrait</button>
+      <button type="button" data-orient="landscape">Paysage</button>
+    </div>
     <div class="exp-list">
       <button type="button" data-exp="zip"><b>Tout exporter (.zip)</b><span>Un seul fichier : le rapport en PDF + toutes les photos, les croquis et les fichiers joints, rangés dans des dossiers.</span></button>
       <button type="button" data-exp="pdf"><b>PDF du dossier</b><span>Coordonnées, remarques, croquis cotés, mesures et photos. Sur l’iPad : Imprimer › pincer l’aperçu › Partager.</span></button>
@@ -1629,35 +1640,46 @@ function bindCanvas(cv){
     cancelStroke();
     G.on=true; G.lock=true; G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
-  cv.addEventListener('pointerdown', e => {
-    if(e.pointerType!=='touch') return;
-    G.pts.set(e.pointerId, [e.clientX, e.clientY]);
-    try{ cv.setPointerCapture(e.pointerId); }catch{}   // toujours capturé : le relâchement du doigt arrive même hors du cadre
-    if(activeType==='pen'){ G.tap=null; return; }      // Pencil en train de dessiner : la main posée n'interrompt pas le trait
-    if(G.pts.size===1) G.tap = {t:Date.now(), start:new Map(), ok:true, max:0};
-    if(G.tap){ G.tap.start.set(e.pointerId, [e.clientX, e.clientY]); G.tap.max = Math.max(G.tap.max, G.pts.size); }
-    if(G.pts.size>=2 || (E.pencilOnly && G.pts.size===1)){ e.preventDefault(); try{ cv.setPointerCapture(e.pointerId); }catch{} gBegin(); }
-  });
-  cv.addEventListener('pointermove', e => {
-    if(!G.pts.has(e.pointerId)) return;
-    G.pts.set(e.pointerId, [e.clientX, e.clientY]);
-    const p0 = G.tap?.start.get(e.pointerId); if(p0 && Math.hypot(e.clientX-p0[0], e.clientY-p0[1]) > 14) G.tap.ok = false;
-    if(!G.on || activeType==='pen') return;
+  /* Gestes à deux doigts suivis avec les événements « touch » : la liste des doigts posés vient d'iOS à chaque
+     événement, elle ne peut pas garder un doigt fantôme (un relâchement perdu faisait sauter le zoom au minimum).
+     Le Pencil (touchType 'stylus') est ignoré ici ; pendant qu'il dessine, la main posée ne fait rien. */
+  const fingers = e => [...e.targetTouches].filter(t => t.touchType !== 'stylus');
+  const syncTouches = e => {
+    const f = fingers(e), before = [...G.pts.keys()].join();
+    G.pts = new Map(f.map(t => [t.identifier, [t.clientX, t.clientY]]));
+    return before !== [...G.pts.keys()].join();   // doigts différents (pas seulement leur nombre)
+  };
+  const touchStart = e => {
+    const was = G.pts.size; syncTouches(e);
+    if(activeType==='pen'){ G.tap=null; return; }
+    if(was===0 && G.pts.size>0) G.tap = {t:Date.now(), start:new Map(), ok:true, max:0};
+    if(G.tap){ for(const [id,p] of G.pts) if(!G.tap.start.has(id)) G.tap.start.set(id, p); G.tap.max = Math.max(G.tap.max, G.pts.size); }
+    if(G.pts.size>=2 || (E.pencilOnly && G.pts.size===1)){ if(e.cancelable) e.preventDefault(); gBegin(); }
+  };
+  const touchMove = e => {
+    if(syncTouches(e) && G.on && G.pts.size) G.s={c:centroid(), d:spread(), V:{...E.view}};   // un doigt de plus ou de moins : on repart d'ici
+    if(G.tap) for(const [id,p] of G.pts){ const p0=G.tap.start.get(id); if(p0 && Math.hypot(p[0]-p0[0], p[1]-p0[1]) > 14) G.tap.ok=false; }
+    if(!G.on || activeType==='pen' || !G.pts.size) return;
+    if(e.cancelable) e.preventDefault();
     const c=centroid(), d=spread(), s0=G.s, V0=s0.V, r=cv.getBoundingClientRect(), dp=DPR();
     const s = clampS(s0.d && d ? V0.s * d/s0.d : V0.s);
     const wx = V0.ox + (s0.c[0]-r.left)*dp/V0.s, wy = V0.oy + (s0.c[1]-r.top)*dp/V0.s;   // point de la feuille sous les doigts
     setView(s, wx - (c[0]-r.left)*dp/s, wy - (c[1]-r.top)*dp/s);
-  });
-  const gEnd = e => {
-    if(!G.pts.delete(e.pointerId)) return;
+  };
+  const touchEnd = e => {
+    syncTouches(e);
     if(G.pts.size===0){
       G.on=false; G.lock=false;
       const t = G.tap; G.tap = null;
-      if(t && t.ok && t.max===2 && Date.now()-t.t < 350 && e.type==='pointerup' && E.undo.length){ $('#edUndo').click(); toast('Annulé'); }
+      if(t && t.ok && t.max===2 && Date.now()-t.t < 350 && e.type==='touchend' && E.undo.length){ $('#edUndo').click(); toast('Annulé'); }
     }
     else if(G.on) G.s={c:centroid(), d:spread(), V:{...E.view}};
   };
-  cv.addEventListener('pointerup', gEnd); cv.addEventListener('pointercancel', gEnd); cv.addEventListener('lostpointercapture', gEnd);
+  cv.addEventListener('touchstart', touchStart, {passive:false});
+  cv.addEventListener('touchmove', touchMove, {passive:false});
+  cv.addEventListener('touchend', touchEnd); cv.addEventListener('touchcancel', touchEnd);
+  // le doigt qui dessine est capturé : son relâchement arrive même hors du cadre
+  cv.addEventListener('pointerdown', e => { if(e.pointerType==='touch') try{ cv.setPointerCapture(e.pointerId); }catch{} });
   cv.addEventListener('wheel', e => {
     if(e.ctrlKey){ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*0.01), e.clientX, e.clientY); }
     else if($('#drawSec').classList.contains('full') || e.shiftKey){     // molette : déplace la feuille (plein écran)
@@ -1962,13 +1984,20 @@ function printWith(mode){
   let st = $('#pageStyle'); if(!st){ st=document.createElement('style'); st.id='pageStyle'; document.head.appendChild(st); }
   let h = 60;
   if(mode==='label'){ const ls=$('#labelSheet'); ls.style.cssText='display:block;position:absolute;left:-9999px;top:0'; h = fitLabel(ls.querySelector('.label')); ls.style.cssText=''; ls.querySelector('.label').style.height = h+'mm'; }
-  st.textContent = mode==='label' ? `@page{size:62mm ${h}mm;margin:0}` : '@page{size:A4;margin:12mm}';
+  document.body.classList.toggle('land', mode!=='label' && ORIENT.get()==='landscape');
+  st.textContent = mode==='label' ? `@page{size:62mm ${h}mm;margin:0}` : `@page{size:A4 ${ORIENT.get()};margin:12mm}`;
   document.body.classList.toggle('print-label', mode==='label');
   const done = () => { document.body.classList.remove('print-label'); window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);
   setTimeout(() => window.print(), 250);
 }
+/* Orientation des PDF (impression du dossier et rapport du zip), retenue sur l'appareil */
+const ORIENT = { get(){ try{ return localStorage.getItem('rc-orient')==='landscape' ? 'landscape' : 'portrait'; }catch{ return 'portrait'; } },
+  set(v){ try{ localStorage.setItem('rc-orient', v); }catch{} } };
+function showOrient(){ document.querySelectorAll('[data-orient]').forEach(b=>b.setAttribute('aria-pressed', b.dataset.orient===ORIENT.get())); }
+document.addEventListener('click', e => { const b = e.target.closest('[data-orient]'); if(b){ ORIENT.set(b.dataset.orient); showOrient(); } });
 function openExport(){
+  showOrient();
   const d=$('#exportDlg'), c=S.cur; if(!c) return;
   $('#lbPreview').innerHTML = labelHTML(c);
   d.hidden=false; fitLabel($('#lbPreview .label')); document.fonts?.ready.then(()=>fitLabel($('#lbPreview .label')));
@@ -2116,8 +2145,8 @@ const pdfTxt = v => String(v??'').replace(/[‘’ʼ]/g,"'").replace(/[“”«�
 const imgDims = d => new Promise(res=>{ const i=new Image(); i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight}); i.onerror=()=>res(null); i.src=d; });
 const fileSafe = s => (s||'').normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60);
 async function reportPDF(c, media){
-  const {jsPDF} = window.jspdf, doc = new jsPDF({unit:'mm', format:'a4'});
-  const W=210, H=297, M=15, CW=W-2*M; let y=M;
+  const {jsPDF} = window.jspdf, doc = new jsPDF({unit:'mm', format:'a4', orientation:ORIENT.get()});
+  const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=15, CW=W-2*M; let y=M;
   const need = h => { if(y+h > H-14){ doc.addPage(); y=M; } };
   const text = (t, x, size=10, style='normal', color=[26,34,38]) => { doc.setFont('helvetica', style); doc.setFontSize(size); doc.setTextColor(...color); doc.text(pdfTxt(t), x, y); };
   const section = (t, keep=0) => { need(14+keep); y+=5; text(t, M, 12.5, 'bold', [29,92,168]); y+=2; doc.setDrawColor(29,92,168); doc.setLineWidth(.4); doc.line(M, y, W-M, y); y+=6; };
