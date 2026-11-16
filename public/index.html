@@ -254,6 +254,22 @@ body.viewer .f input[readonly], body.viewer .f textarea[readonly], body.viewer .
 
 .drop{border:2px dashed var(--line);border-radius:12px;padding:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .drop.over{border-color:var(--accent);background:var(--accent-soft)}
+#addDlg{position:fixed;inset:0;z-index:58;background:rgba(10,15,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+#addDlg .add-box{background:var(--surface);border-radius:16px;width:min(620px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:14px}
+#addDlg h3{font-size:24px}
+.add-zone{border:2px dashed var(--line);border-radius:14px;min-height:240px;padding:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--muted)}
+.add-zone b{font:600 22px var(--f-display);color:var(--ink)}
+.add-zone span{font-size:14px}
+.add-zone .btn{margin-top:8px}
+.add-zone.over{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.add-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.add-list:empty{display:none}
+.add-list li{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:8px;background:var(--surface-2)}
+.add-list .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.add-list .stt{flex:none;color:var(--muted)}
+.add-list li.ok .stt{color:var(--ok)}
+.add-list li.ko .stt{color:var(--danger)}
+#addDlg .foot{display:flex;justify-content:flex-end}
 .filebtn{position:relative;overflow:hidden}
 .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:14px}
@@ -1016,10 +1032,11 @@ function renderMain(){
 
     <section class="card" id="secFiles">
       <div class="card-h"><h3>Photos &amp; fichiers</h3><span class="eyebrow">Photos, PDF, plans, devis…</span></div>
-      <div class="drop" id="drop">
+      <div class="drop" id="drop">${TOUCH ? `
         <label class="btn primary filebtn">Prendre une photo<input type="file" accept="image/*" capture="environment" id="camIn"></label>
-        <label class="btn filebtn">Importer photos ou fichiers<input type="file" multiple id="fileIn"></label>
-        <span class="note">ou glissez-les ici depuis un ordinateur</span>
+        <label class="btn filebtn">Importer photos ou fichiers<input type="file" multiple id="fileIn"></label>` : `
+        <button class="btn primary" type="button" id="addOpen">Ajouter des documents…</button>
+        <span class="note">ou glissez vos fichiers n’importe où sur la page</span>`}
       </div>
       <div class="gallery" id="gallery"></div>
     </section>
@@ -1140,13 +1157,67 @@ function renderGallery(){
 $('#viewer').onclick = e => { if(e.target.tagName!=='IMG') $('#viewer').hidden=true; };
 function setupFiles(){
   const onFiles = async files => { for(const f of files) await addFile(f); renderGallery(); storeInfo(); };
-  $('#camIn').onchange = e => { onFiles([...e.target.files]); e.target.value=''; };
-  $('#fileIn').onchange = e => { onFiles([...e.target.files]); e.target.value=''; };
+  if($('#camIn')) $('#camIn').onchange = e => { onFiles([...e.target.files]); e.target.value=''; };
+  if($('#fileIn')) $('#fileIn').onchange = e => { onFiles([...e.target.files]); e.target.value=''; };
+  if($('#addOpen')) $('#addOpen').onclick = () => openAddDlg();
   const d = $('#drop');
   d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
   d.ondragleave = () => d.classList.remove('over');
   d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); onFiles([...e.dataTransfer.files]); };
 }
+/* ---------- Ajout de documents sur ordinateur : fenêtre « glisser ici » + bouton Ouvrir ----------
+   S'ouvre avec le bouton, ou toute seule quand on fait glisser des fichiers au-dessus de la page d'un dossier. */
+function openAddDlg(){
+  if(!S.cur) return;
+  let d = $('#addDlg');
+  if(!d){
+    d = document.createElement('div'); d.id = 'addDlg';
+    d.innerHTML = `<div class="add-box" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+      <h3 id="addTitle"></h3>
+      <div class="add-zone" id="addZone">
+        <svg width="44" height="44" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0-4 4m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+        <b>Glissez vos fichiers ici</b><span>Photos, PDF, plans, devis… (40 Mo maximum par fichier)</span>
+        <label class="btn primary filebtn">Ouvrir…<input type="file" multiple id="addIn"></label>
+      </div>
+      <ul class="add-list" id="addList"></ul>
+      <div class="foot"><button class="btn" type="button" id="addClose">Fermer</button></div>
+    </div>`;
+    document.body.appendChild(d);
+    const z = $('#addZone');
+    z.ondragover = e => { e.preventDefault(); z.classList.add('over'); };
+    z.ondragleave = e => { if(!z.contains(e.relatedTarget)) z.classList.remove('over'); };
+    z.ondrop = e => { e.preventDefault(); z.classList.remove('over'); addSend([...e.dataTransfer.files]); };
+    d.addEventListener('dragover', e => e.preventDefault());
+    d.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); addSend([...e.dataTransfer.files]); });
+    $('#addIn').onchange = e => { addSend([...e.target.files]); e.target.value=''; };
+    $('#addClose').onclick = () => { d.hidden = true; };
+    d.addEventListener('click', e => { if(e.target === d) d.hidden = true; });
+    document.addEventListener('keydown', e => { if(e.key==='Escape' && !d.hidden) d.hidden = true; });
+  }
+  $('#addTitle').textContent = 'Ajouter au dossier · ' + (fullName(S.cur) || 'Sans nom');
+  if(d.dataset.for !== S.cur.id){ $('#addList').innerHTML = ''; d.dataset.for = S.cur.id; }
+  d.hidden = false;
+}
+async function addSend(files){
+  const list = $('#addList');
+  for(const f of files){
+    const li = document.createElement('li'); li.innerHTML = `<span class="nm"></span><span class="stt">envoi…</span>`;
+    li.querySelector('.nm').textContent = f.name; list.prepend(li);
+    const r = await addFile(f);
+    li.querySelector('.stt').textContent = r === true ? (SYNC.role==='viewer' ? '✓ envoyé' : '✓ ajouté') : '✗ ' + (r || 'non envoyé');
+    li.classList.add(r === true ? 'ok' : 'ko');
+  }
+  renderGallery(); storeInfo();
+}
+// fichiers glissés au-dessus d'un dossier ouvert (ordinateur) : la fenêtre d'ajout s'ouvre
+document.addEventListener('dragenter', e => {
+  if(TOUCH || !S.cur || !$('#app').classList.contains('detail') && window.innerWidth <= 900) return;
+  if(![...(e.dataTransfer?.types || [])].includes('Files') || $('#calepLayer')) return;
+  if($('#addDlg')?.hidden === false) return;
+  openAddDlg();
+});
+document.addEventListener('dragover', e => { if([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', e => { if([...(e.dataTransfer?.types || [])].includes('Files') && !e.target.closest?.('#addDlg, #drop')) e.preventDefault(); });
 const readURL = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); });
 async function shrink(file, max=1800){
   const url = URL.createObjectURL(file);
@@ -1163,9 +1234,10 @@ async function shrink(file, max=1800){
 async function saveNewMedia(m, what){
   if(SYNC.role==='viewer'){
     try{ await Sync.api('PUT', '/media/'+encodeURIComponent(m.id), {...m, ajoutBureau:true}); }
-    catch(e){ toast(navigator.onLine ? `${what} non envoyé : ${e.message}` : `${what} non envoyé : pas de connexion`); return; }
+    catch(e){ const msg = navigator.onLine ? `non envoyé : ${e.message}` : 'non envoyé : pas de connexion'; toast(`${what} ${msg}`); return msg; }
   } else await DB.put('media', m);
   S.media.push(m); touch(); toast(SYNC.role==='viewer' ? `${what} envoyé à la tablette` : `${what} ajouté`);
+  return true;
 }
 async function addFile(file){
   const base = {id:uid(), chantierId:S.cur.id, legende:'', created:Date.now()};
@@ -1174,11 +1246,11 @@ async function addFile(file){
     try{ const r = await shrink(file); m = {...base, kind:'photo', base:r.data, data:r.data, w:r.w, h:r.h, ops:[]}; }catch{}
   }
   if(!m){
-    if(file.size > 40*1048576){ toast(`« ${file.name} » dépasse 40 Mo`); return; }
+    if(file.size > 40*1048576){ toast(`« ${file.name} » dépasse 40 Mo`); return 'trop lourd (40 Mo maximum)'; }
     try{ m = {...base, kind:'fichier', name:file.name, mime:file.type||'application/octet-stream', size:file.size, data:await readURL(file)}; }
-    catch{ toast(`Impossible de lire « ${file.name} »`); return; }
+    catch{ toast(`Impossible de lire « ${file.name} »`); return 'fichier illisible'; }
   }
-  await saveNewMedia(m, m.kind==='photo' ? 'Photo' : 'Fichier');
+  return saveNewMedia(m, m.kind==='photo' ? 'Photo' : 'Fichier');
 }
 function dataToBlob(d){ const i=d.indexOf(','); const mime=(d.slice(0,i).match(/data:([^;]+)/)||[])[1]||'application/octet-stream'; const bin=atob(d.slice(i+1)); const u=new Uint8Array(bin.length); for(let j=0;j<bin.length;j++) u[j]=bin.charCodeAt(j); return new Blob([u],{type:mime}); }
 function openFile(x){
