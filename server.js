@@ -32,6 +32,7 @@ const q = {
   delMediaOf: db.prepare('DELETE FROM media WHERE chantier_id = ?'),
   mediaIds: db.prepare("SELECT id, chantier_id AS chantierId, json_extract(json, '$.rev') AS rev FROM media"),
   mediaOne: db.prepare('SELECT json FROM media WHERE id = ?'),
+  suiviAll: db.prepare("SELECT json FROM media WHERE json_extract(json, '$.kind') = 'suivi'"),
   stats: db.prepare('SELECT (SELECT COUNT(*) FROM chantiers) AS chantiers, (SELECT COUNT(*) FROM media) AS media, (SELECT MAX(updated) FROM chantiers) AS updated'),
 };
 
@@ -82,6 +83,28 @@ api.get('/chantiers/:id/media', (req, res) => {
   res.json(q.mediaOf.all(req.params.id).map(r => JSON.parse(r.json)));
 });
 api.get('/media-ids', (req, res) => res.json(q.mediaIds.all()));
+
+// --- Suivi client : relances (appel / message / mail) notées depuis l'iPhone ou le PC ---
+// Un élément 'suivi-<dossier>' par dossier (kind 'suivi', rel = [{m, t}]) ; la tablette le récupère comme les autres (rev).
+const RELANCE = new Set(['tel', 'sms', 'mail']);
+api.get('/suivi', (req, res) => res.json(q.suiviAll.all().map(r => { const m = JSON.parse(r.json); return { chantierId: m.chantierId, rel: m.rel || [] }; })));
+const editSuivi = db.transaction((cid, fn) => {
+  const id = 'suivi-' + cid, row = q.mediaOne.get(id);
+  const m = row ? JSON.parse(row.json) : { id, chantierId: cid, kind: 'suivi', rel: [], created: Date.now() };
+  fn(m); m.rev = Date.now();
+  q.putMedia.run(id, cid, JSON.stringify(m), m.created);
+  return m;
+});
+api.post('/suivi/:cid', (req, res) => {
+  const { m, t } = req.body || {};
+  if (!validId(req.params.cid) || !RELANCE.has(m) || !Number.isFinite(t)) return res.status(400).json({ error: 'Relance invalide' });
+  res.json(editSuivi(req.params.cid, s => { if (!s.rel.some(r => r.t === t && r.m === m)) s.rel.push({ m, t }); s.rel.sort((a, b) => a.t - b.t); }));
+});
+api.delete('/suivi/:cid/:t', (req, res) => {
+  const t = +req.params.t;
+  if (!validId(req.params.cid) || !Number.isFinite(t)) return res.status(400).json({ error: 'Relance invalide' });
+  res.json(editSuivi(req.params.cid, s => { s.rel = s.rel.filter(r => r.t !== t); }));
+});
 api.get('/media/:id', (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Identifiant invalide' });
   const r = q.mediaOne.get(req.params.id);

@@ -74,6 +74,9 @@ body.viewer .f input[readonly], body.viewer .f textarea[readonly], body.viewer .
 .roles span{font-size:13px;color:var(--muted)}
 .foot{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
 .pane{display:flex;flex-direction:column;min-height:0;flex:1}
+/* liste : le récap, la recherche et les clients défilent ensemble (sinon la liste devient minuscule sur iPhone) */
+#listPane{overflow-y:auto;margin:0 -6px;padding:0 6px}
+#listPane .list{flex:none;overflow:visible}
 #clientPane{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:20px;gap:12px}
 #clientPane .card{padding:16px}
 .stack{display:flex;flex-direction:column;gap:12px}
@@ -103,11 +106,42 @@ body.viewer .f input[readonly], body.viewer .f textarea[readonly], body.viewer .
 .brand small{display:block;font:500 12px var(--f-body);color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
 .search{width:100%;padding:11px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);min-height:46px}
 .list{flex:1;overflow-y:auto;margin:12px -6px 0;padding:0 6px 12px;display:flex;flex-direction:column;gap:6px}
-.item{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:var(--r);padding:12px;min-height:64px}
+.item{display:block;width:100%;text-align:left;cursor:pointer;border:1px solid transparent;background:transparent;border-radius:var(--r);padding:12px;min-height:64px}
 .item:hover{background:var(--surface)}
 .item[aria-current="true"]{background:var(--surface);border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
 .item b{display:block;font-weight:600}
 .item .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:3px}
+.item.late{border-color:color-mix(in srgb,var(--danger) 35%,var(--line));background:var(--surface)}
+.item .last{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px;margin-top:5px}
+.item .last .lbl{color:var(--muted)}
+.flag{font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+.flag.today{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.rels{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px}
+.rel{display:flex;align-items:center;justify-content:center;gap:6px;min-height:42px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:600;font-size:14px;text-decoration:none}
+.rel svg{flex:none}
+.rel:active{transform:translateY(1px)}
+.rel[aria-disabled="true"]{opacity:.4;pointer-events:none}
+.hist{margin:8px 0 0;padding:8px 10px;border-radius:8px;background:var(--surface-2);font-size:13px;list-style:none;display:flex;flex-direction:column;gap:3px}
+.hist li{display:flex;gap:8px}
+.hist .k{color:var(--muted);min-width:7.5em}
+.recap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px 4px;margin-top:10px}
+.recap-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px}
+.recap-h h2{font-size:19px}
+.recap-h span{font-size:12px;color:var(--muted)}
+.rc-row{display:flex;align-items:center;gap:10px;width:100%;border:0;border-top:1px solid var(--line);background:transparent;text-align:left;padding:8px 4px;min-height:44px;color:var(--ink)}
+.rc-row:first-of-type{border-top:0}
+.rc-row .n{font:600 19px var(--f-num);min-width:2ch;text-align:right}
+.rc-row .t{flex:1;min-width:0}
+.rc-row .t small{display:block;color:var(--muted);font-size:12px}
+.rc-row .go{color:var(--muted);font-size:18px}
+.rc-row.hot .n{color:var(--danger)}
+.rc-row.good .n{color:var(--ok)}
+.rc-row[aria-pressed="true"]{background:var(--accent-soft);border-radius:8px}
+.rfilter{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding:6px 6px 6px 12px;border-radius:var(--r);background:var(--accent-soft);font-size:14px;font-weight:600}
+.rfilter button{border:0;background:transparent;font-weight:600;color:var(--accent);min-height:36px;padding:0 8px}
+#toast.act{pointer-events:auto;display:flex;gap:14px;align-items:center;border-radius:14px;width:max-content;max-width:min(520px,calc(100vw - 32px));font-weight:500}
+#toast.act span{flex:1;min-width:0}
+#toast button{border:0;background:transparent;color:var(--bg);font-weight:700;text-decoration:underline;min-height:34px;padding:0}
 .sidefoot{border-top:1px solid var(--line);padding-block:10px 14px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:8px}
 .sidefoot .row{display:flex;gap:8px;flex-wrap:wrap}
 
@@ -351,7 +385,9 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
     </div>
     <div class="pane" id="listPane">
     <button class="btn primary" id="newBtn" type="button">+ Nouveau chantier</button>
+    <section class="recap" id="recap" hidden aria-labelledby="rcTitle"></section>
     <input class="search" id="q" type="search" placeholder="Rechercher un client, une ville…" style="margin-top:10px" autocomplete="off">
+    <div class="rfilter" id="rfilter" hidden><span id="rfTxt"></span><button type="button" id="rfClr">Tout afficher ✕</button></div>
     <div class="list" id="list" role="list"></div>
     <div class="sidefoot">
       <div class="row">
@@ -424,7 +460,12 @@ const fmt = (x, d=2) => x.toLocaleString('fr-FR', {minimumFractionDigits:d, maxi
 const size = b => b > 1048576 ? fmt(b/1048576,1)+' Mo' : Math.max(1,Math.round(b/1024))+' Ko';
 const inFrame = (() => { try { return window.self !== window.top; } catch { return true; } })();
 let toastT;
-function toast(msg, ms=2200){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),ms); }
+function toast(msg, ms=2200){ const t=$('#toast'); t.classList.remove('act'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),ms); }
+function toastUndo(msg, fn, ms=6000){
+  const t=$('#toast'); t.innerHTML = `<span>${esc(msg)}</span><button type="button">Annuler</button>`; t.classList.add('on','act');
+  t.querySelector('button').onclick = () => { t.classList.remove('on','act'); clearTimeout(toastT); fn(); };
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on','act'), ms);
+}
 function armed(btn, label, action){
   if(btn.classList.contains('armed')){ action(); return; }
   const old = btn.textContent; btn.classList.add('armed'); btn.textContent = label;
@@ -501,14 +542,15 @@ const Sync = {
       const have = new Map((await DB.all('media')).map(m=>[m.id, m.rev ?? null]));
       const out = new Set((await DB.all('outbox')).map(o=>o.id));
       const known = new Set(S.list.filter(c=>!c.exemple).map(c=>c.id));
-      let n = 0;
+      let n = 0, ns = 0;
       for(const r of ids){
         if((have.has(r.id) && (r.rev == null || have.get(r.id) === r.rev)) || out.has('media:'+r.id) || !known.has(r.chantierId)) continue;   // nouveau, ou calepinage modifié au bureau
         const m = await this.api('GET', '/media/'+encodeURIComponent(r.id));
         if(!m || m.id!==r.id) continue;
-        await DB.rawPut('media', m); n++;
+        await DB.rawPut('media', m); if(m.kind==='suivi'){ S.suivi[m.chantierId] = m.rel||[]; ns++; continue; } n++;
         if(S.cur?.id===m.chantierId){ S.media = S.media.filter(x=>x.id!==m.id); S.media.push(m); S.media.sort((a,b)=>a.created-b.created); renderGallery(); renderStrip(); }
       }
+      if(ns) renderList();
       if(n){ toast(n>1 ? `${n} éléments reçus du bureau` : '1 élément reçu du bureau'); storeInfo(); }
     }catch{}
     finally{ SYNC.pulling = false; }
@@ -516,7 +558,7 @@ const Sync = {
   async pushAll(){
     for(const c of await DB.all('chantiers')) if(!c.exemple) await DB.rawPut('outbox', {id:'chantiers:'+c.id, st:'chantiers', rid:c.id, op:'put', t:Date.now()+Math.random()});
     const ex = new Set(S.list.filter(c=>c.exemple).map(c=>c.id));
-    for(const m of await DB.all('media')) if(!ex.has(m.chantierId)) await DB.rawPut('outbox', {id:'media:'+m.id, st:'media', rid:m.id, op:'put', t:Date.now()+Math.random()});
+    for(const m of await DB.all('media')) if(!ex.has(m.chantierId) && m.kind!=='suivi' && m.kind!=='calepinage') await DB.rawPut('outbox', {id:'media:'+m.id, st:'media', rid:m.id, op:'put', t:Date.now()+Math.random()});
     this.flush();
   },
   async refreshStatus(){
@@ -606,7 +648,7 @@ const toitureTotals = t => {
 };
 
 /* ---------- État ---------- */
-const S = {list:[], cur:null, media:[], q:''};
+const S = {list:[], cur:null, media:[], q:'', suivi:{}, rf:null, open:new Set()};
 let saveT;
 function touch(){ if(!S.cur || SYNC.role==='viewer') return; S.cur.updated=Date.now(); clearTimeout(saveT); const c=S.cur; saveT=setTimeout(async()=>{ await DB.put('chantiers', c); renderList(); }, 400); }
 const byId = id => S.list.find(c=>c.id===id);
@@ -619,6 +661,7 @@ async function load(){
   S.list = await DB.all('chantiers');
   if(!S.list.length){ await seed(); S.list = await DB.all('chantiers'); }
   S.list.forEach(normalize);
+  await loadSuivi();
   renderList(); Sync.flush();
   if(window.innerWidth > 900 && S.list.length) await openChantier(sorted()[0].id); else renderMain();
   storeInfo();
@@ -629,6 +672,7 @@ async function loadRemote(keepCur){
   if(!SYNC.token){ S.list=[]; renderList(); $('#main').innerHTML = `<div class="welcome"><h2>Mode consultation</h2><p>Entrez le code d’accès du serveur dans <b>Réglages</b> (en bas à gauche) pour afficher les dossiers de la tablette.</p></div>`; Sync.refreshStatus(); return; }
   try{
     S.list = (await Sync.api('GET','/chantiers')).map(normalize); SYNC.state='ok'; SYNC.last=Date.now();
+    await loadSuivi();
   }catch(e){
     SYNC.state = e.auth?'auth':'err'; Sync.refreshStatus();
     if(!S.list.length) $('#main').innerHTML = `<div class="welcome"><h2>${e.auth?'Code d’accès refusé':'Serveur injoignable'}</h2><p>${e.auth?'Vérifiez le code dans Réglages.':'Vérifiez la connexion internet puis touchez Actualiser.'}</p></div>`;
@@ -654,17 +698,88 @@ async function storeInfo(){
 }
 
 /* ---------- Liste ---------- */
+/* ---------- Suivi client : relances et récap du matin ----------
+   Relances notées depuis l'iPhone ou le PC (consultation) : les boutons ouvrent l'appel, Messages ou le mail
+   et notent la date et l'heure sur le serveur (POST /suivi/:id). La tablette les reçoit (élément 'suivi-<id>').
+   Un client revient « à relancer » après 3 jours de calendrier sans contact (relance, sinon date de visite). */
+const DELAI_RELANCE = 3, DAY = 864e5;
+const MODES = {tel:{ic:'📞', lbl:'Appel'}, sms:{ic:'💬', lbl:'Message'}, mail:{ic:'✉️', lbl:'Mail'}};
+const ICON_REL = {
+  tel:'<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>',
+  sms:'<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg>',
+  mail:'<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zm9 7.2L4.2 7H3.9L12 13.4 20.1 7h-.3z"/></svg>'};
+const day0 = t => { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); };
+const relsOf = c => S.suivi[c.id] || [];
+const lastRel = c => { const r = relsOf(c); return r.length ? r[r.length-1] : null; };
+const visiteT = c => c.date ? new Date(c.date + 'T12:00').getTime() : (c.created || Date.now());
+const lastContact = c => lastRel(c)?.t ?? visiteT(c);
+const actif = c => !c.exemple && c.statut !== 'signe' && c.statut !== 'perdu';
+const joursSans = c => Math.round((day0(Date.now()) - day0(lastContact(c))) / DAY);
+const aRelancer = c => actif(c) && joursSans(c) >= DELAI_RELANCE;
+const relAuj = c => { const l = lastRel(c); return !!l && l.t >= day0(Date.now()); };
+const RGROUPS = [
+  {k:'relancer', t:'À relancer', d:`aucun contact depuis ${DELAI_RELANCE} jours ou plus`, cls:'hot', f:aRelancer},
+  {k:'devis', t:'Devis envoyés en attente', d:'pas encore signés', cls:'', f:c => !c.exemple && c.statut === 'devis'},
+  {k:'auj', t:'Relancés aujourd’hui', d:'appel, message ou mail', cls:'good', f:relAuj}];
+const fmtDM = t => new Date(t).toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit'});
+const fmtHM = t => new Date(t).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+function relHref(c, m){
+  const tel = (c.tel||'').replace(/[^\d+]/g, '');
+  if(m==='tel') return tel ? 'tel:' + tel : '';
+  if(m==='sms') return tel ? 'sms:' + tel : '';
+  return c.email ? `mailto:${c.email.trim()}?subject=${encodeURIComponent('Votre projet EcoTole')}` : '';
+}
+async function loadSuivi(){
+  try{
+    if(SYNC.role==='viewer'){ if(!SYNC.token) return; S.suivi = Object.fromEntries((await Sync.api('GET', '/suivi')).map(x=>[x.chantierId, x.rel||[]])); }
+    else S.suivi = Object.fromEntries((await DB.all('media')).filter(m=>m.kind==='suivi').map(m=>[m.chantierId, m.rel||[]]));
+  }catch{}
+}
+function renderRecap(){
+  const el = $('#recap'), real = S.list.filter(c=>!c.exemple);
+  el.hidden = !real.length;
+  if(!real.length){ S.rf = null; return; }
+  el.innerHTML = `<div class="recap-h"><h2 id="rcTitle">Ce matin</h2><span>${new Date().toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long'})}</span></div>` +
+    RGROUPS.map(g => `<button type="button" class="rc-row ${g.cls}" data-g="${g.k}" aria-pressed="${S.rf===g.k}"><span class="n num">${real.filter(g.f).length}</span><span class="t">${g.t}<small>${g.d}</small></span><span class="go" aria-hidden="true">›</span></button>`).join('');
+}
 function renderList(){
-  const q = S.q.trim().toLowerCase();
-  const items = sorted().filter(c => !q || `${fullName(c)} ${c.prenom} ${c.entreprise||''} ${fullAdr(c)} ${c.tel}`.toLowerCase().includes(q));
-  $('#list').innerHTML = items.map(c => `
-    <button class="item" role="listitem" type="button" data-id="${c.id}" aria-current="${S.cur?.id===c.id}">
+  renderRecap();
+  const q = S.q.trim().toLowerCase(), g = RGROUPS.find(x=>x.k===S.rf);
+  let items = sorted().filter(c => !q || `${fullName(c)} ${c.prenom} ${c.entreprise||''} ${fullAdr(c)} ${c.tel}`.toLowerCase().includes(q));
+  if(g) items = items.filter(g.f).sort((a,b) => lastContact(a) - lastContact(b));
+  $('#rfilter').hidden = !g; if(g) $('#rfTxt').textContent = `${g.t} · ${items.length} client${items.length>1?'s':''}`;
+  const canRel = SYNC.role==='viewer' && !!SYNC.token;
+  $('#list').innerHTML = items.map(c => {
+    const l = lastRel(c), late = aRelancer(c), today = relAuj(c);
+    const last = c.exemple ? '' : `<span class="last">${l ? `<span class="lbl">Dernière relance :</span> ${MODES[l.m].ic} <span class="num">${fmtDM(l.t)}</span> à <span class="num">${fmtHM(l.t)}</span>` : `<span class="lbl">Jamais relancé</span>`}${late ? `<span class="flag">à relancer · ${joursSans(c)} j</span>` : today ? `<span class="flag today">relancé aujourd’hui</span>` : ''}</span>`;
+    const btns = canRel && actif(c) ? `<span class="rels">${Object.entries(MODES).map(([m, M]) => { const h = relHref(c, m);
+      return `<a class="rel" data-rel="${m}" href="${h ? esc(h) : '#'}" ${h ? '' : 'aria-disabled="true" tabindex="-1"'} aria-label="${M.lbl} ${esc(fullName(c))}">${ICON_REL[m]}${M.lbl}</a>`; }).join('')}</span>` : '';
+    const hist = S.open.has(c.id) ? `<ul class="hist">${[...relsOf(c)].reverse().map(r => `<li><span class="k">${MODES[r.m]?.ic||''} ${MODES[r.m]?.lbl||''}</span><span class="num">${fmtDM(r.t)} · ${fmtHM(r.t)}</span></li>`).join('') || '<li>Aucune relance pour l’instant.</li>'}${c.date ? `<li><span class="k">🏠 Visite</span><span class="num">${fmtDM(visiteT(c))}</span></li>` : ''}</ul>` : '';
+    return `<div class="item${late?' late':''}" role="listitem" tabindex="0" data-id="${c.id}" aria-current="${S.cur?.id===c.id}">
       <b>${esc(fullName(c)||'Nouveau client')}</b>
       <span class="meta">${c.exemple?'<span class="chip ex">Exemple</span>':''}<span class="chip st-${c.statut}">${STATUTS[c.statut]||''}</span></span>
       <span class="meta"><span class="num">${c.date?new Date(c.date).toLocaleDateString('fr-FR'):''}</span><span>${esc([c.entreprise, c.ville||c.adresse].filter(Boolean).join(' · ').slice(0,40))}</span></span>
-    </button>`).join('') || `<p class="note" style="padding:12px">Aucun chantier ne correspond.</p>`;
+      ${last}${btns}${hist}
+    </div>`; }).join('') || `<p class="note" style="padding:12px">${g ? 'Aucun client ici.' : 'Aucun chantier ne correspond.'}</p>`;
 }
-$('#list').addEventListener('click', e => { const b=e.target.closest('.item'); if(b) openChantier(b.dataset.id); });
+async function noteRelance(c, m){
+  const t = Date.now(); (S.suivi[c.id] ||= []).push({m, t}); renderList();
+  const del = async () => { S.suivi[c.id] = relsOf(c).filter(r=>r.t!==t); renderList();
+    try{ await Sync.api('DELETE', `/suivi/${encodeURIComponent(c.id)}/${t}`); }catch{ toast('Annulation non enregistrée : pas de connexion'); } };
+  try{
+    await Sync.api('POST', '/suivi/'+encodeURIComponent(c.id), {m, t});
+    toastUndo(`Relance ${MODES[m].lbl.toLowerCase()} notée à ${fmtHM(t)} · ${fullName(c)}`, del);
+  }catch(e){ S.suivi[c.id] = relsOf(c).filter(r=>r.t!==t); renderList(); toast(navigator.onLine ? 'Relance non notée : '+e.message : 'Relance non notée : pas de connexion', 4000); }
+}
+$('#recap').addEventListener('click', e => { const r = e.target.closest('.rc-row'); if(!r) return; S.rf = S.rf===r.dataset.g ? null : r.dataset.g; renderList(); });
+$('#rfClr').addEventListener('click', () => { S.rf = null; renderList(); });
+$('#list').addEventListener('click', e => {
+  const a = e.target.closest('.rel');
+  if(a){ const c = byId(a.closest('.item').dataset.id); if(c && a.getAttribute('aria-disabled')!=='true') noteRelance(c, a.dataset.rel); return; }   // le lien ouvre l'appel / Messages / le mail
+  if(e.target.closest('.last')){ const id = e.target.closest('.item').dataset.id; S.open.has(id) ? S.open.delete(id) : S.open.add(id); renderList(); return; }
+  const b=e.target.closest('.item'); if(b) openChantier(b.dataset.id);
+});
+$('#list').addEventListener('keydown', e => { const b=e.target.closest('.item'); if(b && e.target===b && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); openChantier(b.dataset.id); } });
 $('#q').addEventListener('input', e => { S.q=e.target.value; renderList(); });
 $('#newBtn').addEventListener('click', async () => {
   const c = newChantier(); await DB.put('chantiers', c); S.list.push(c);
