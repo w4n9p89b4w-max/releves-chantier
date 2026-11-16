@@ -1989,7 +1989,7 @@ function labelHTML(c){
     <div class="lb-name" data-fit="36">${esc(fullName(c)||'Client')}</div>
     ${c.entreprise && c.entreprise!==fullName(c) ? `<div class="lb-ent" data-fit="22">${esc(c.entreprise)}</div>` : ''}
     ${c.tel?`<div class="lb-tel" data-fit="34">${esc(c.tel)}</div>`:''}
-    ${fullAdr(c)?`<div class="lb-adr">${c.adresse?`<div data-fit="24" data-split="11">${esc(c.adresse)}</div>`:''}${c.cp||c.ville?`<div data-fit="24">${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}</div>`:''}
+    ${fullAdr(c)?`<div class="lb-adr">${c.adresse?`<div data-fit="24" data-split="15">${esc(c.adresse)}</div>`:''}${c.cp||c.ville?`<div data-fit="24">${esc([c.cp,c.ville].filter(Boolean).join(' '))}</div>`:''}</div>`:''}
     ${c.email?`<div class="lb-mail" data-fit="20">${esc(c.email)}</div>`:''}
     <div class="lb-bot"><span>Visite ${esc(d)}</span><span>${esc(STATUTS[c.statut]||'')}</span></div>
   </div>`;
@@ -2010,13 +2010,16 @@ function fitLabel(label){
       const t = el.textContent.trim(), sp = [...t.matchAll(/ /g)].map(m=>m.index);
       if(!sp.length) return;
       const cut = sp.reduce((a,b)=>Math.abs(b-t.length/2) < Math.abs(a-t.length/2) ? b : a);
-      const mk = txt => { const d = document.createElement('div'); d.dataset.fit = el.dataset.fit; d.textContent = txt; return d; };
+      const mk = txt => { const d = document.createElement('div'); d.dataset.fit = el.dataset.fit; d.dataset.grp = 'split'; d.textContent = txt; return d; };
       const a = mk(t.slice(0, cut)), b = mk(t.slice(cut+1)); el.replaceWith(a, b);
       const pa = fit(a), pb = fit(b), pm = Math.min(pa, pb); a.style.fontSize = b.style.fontSize = pm.toFixed(2)+'pt';   // même taille sur les 2 lignes
       return;
     }
     if(!el.dataset.split) fit(el);
   });
+  // lignes d'une adresse coupée : même taille (aussi quand l'étiquette est réajustée une 2e fois)
+  const grp = [...label.querySelectorAll('[data-grp="split"]')];
+  if(grp.length){ const pm = Math.min(...grp.map(d=>parseFloat(d.style.fontSize))); grp.forEach(d=>d.style.fontSize = pm.toFixed(2)+'pt'); }
   return Math.ceil(label.getBoundingClientRect().height * 25.4 / 96);
 }
 function printWith(mode){
