@@ -1503,20 +1503,26 @@ async function exportPreviewPdf(ov, ifr, title, landscape, btn, toFolder){
 /* Impression d'un document découpé en pages (data-pdf-page, ex. le devis : page 1 = plan + métrés,
    page 2 = détail des coûts) : chaque page est mise à la largeur imprimable A4 puis réduite (zoom) si elle
    dépasse la hauteur d'une feuille, pour qu'elle tienne ENTIÈRE sur sa feuille sans déborder sur la suivante. */
-function fitPagesForPrint(ifr, landscape){
+function fitPagesForPrint(ifr){
+  // Réduction calculée pour les DEUX orientations ; la feuille choisie dans la fenêtre d'impression
+  // (Portrait ou Paysage) applique la bonne grâce à @media print and (orientation: …).
   try{
     const doc=ifr.contentDocument; if(!doc) return;
     const pages=[...doc.querySelectorAll('[data-pdf-page]')]; if(!pages.length) return;
     const mmToPx=96/25.4, M=10;
-    const w=Math.floor(((landscape?297:210)-2*M)*mmToPx), h=Math.floor(((landscape?210:297)-2*M)*mmToPx)-12;
-    doc.body.style.width=w+'px'; doc.body.style.padding='0';
-    pages.forEach(pg=>{
-      pg.style.zoom='';
-      const ph=pg.scrollHeight;
-      if(ph>h) pg.style.zoom=String(Math.floor(h/ph*1000)/1000);
-    });
-    const restore=()=>{ doc.body.style.width=''; doc.body.style.padding=''; pages.forEach(pg=>pg.style.zoom=''); ifr.contentWindow.removeEventListener('afterprint',restore); };
-    ifr.contentWindow.addEventListener('afterprint',restore);
+    const bodyW=doc.body.style.width, bodyP=doc.body.style.padding;
+    const measure=(wmm,hmm)=>{
+      const w=Math.floor((wmm-2*M)*mmToPx), h=Math.floor((hmm-2*M)*mmToPx)-16;
+      doc.body.style.width=w+'px'; doc.body.style.padding='0';
+      return pages.map(pg=>{ pg.style.zoom=''; const ph=pg.scrollHeight; return ph>h?Math.floor(h/ph*1000)/1000:1; });
+    };
+    const zp=measure(210,297), zl=measure(297,210);
+    doc.body.style.width=bodyW; doc.body.style.padding=bodyP;
+    pages.forEach((pg,i)=>pg.setAttribute('data-pg',i));
+    let st=doc.getElementById('fit-print'); if(!st){ st=doc.createElement('style'); st.id='fit-print'; doc.head.appendChild(st); }
+    st.textContent='@media print{body{width:auto!important;padding:0!important}}'
+      +'@media print and (orientation:portrait){'+pages.map((_,i)=>zp[i]<1?'[data-pg="'+i+'"]{zoom:'+zp[i]+'}':'').join('')+'}'
+      +'@media print and (orientation:landscape){'+pages.map((_,i)=>zl[i]<1?'[data-pg="'+i+'"]{zoom:'+zl[i]+'}':'').join('')+'}';
   }catch(e){}
 }
 function openPrintable(html){
@@ -1542,6 +1548,7 @@ function openPrintable(html){
   document.body.appendChild(ov);
   const ifr=ov.querySelector('iframe');
   ifr.srcdoc=html;
+  ifr.addEventListener('load',()=>setTimeout(()=>fitPagesForPrint(ifr),100));   // prêt aussi pour Ctrl+P dans l'aperçu
   const close=()=>{ ov.remove(); document.removeEventListener('keydown',key,true); };
   const key=e=>{ if(e.key==='Escape'){ e.preventDefault(); close(); } };
   document.addEventListener('keydown',key,true);
@@ -1549,7 +1556,7 @@ function openPrintable(html){
     const b=e.target.closest('[data-a]'); if(!b) return;
     if(b.dataset.a==='close') close();
     else if(b.dataset.a==='print'){
-      try{ fitPagesForPrint(ifr, landscape); ifr.contentWindow.focus(); ifr.contentWindow.print(); }
+      try{ fitPagesForPrint(ifr); ifr.contentWindow.focus(); ifr.contentWindow.print(); }
       catch(err){ ov.querySelector('[data-a="hint"]').innerHTML='<b style="color:var(--red)">L\'impression est bloquée ici.</b> Utilisez « 📄 Télécharger en PDF ».'; }
     }
     else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, landscape, b);
