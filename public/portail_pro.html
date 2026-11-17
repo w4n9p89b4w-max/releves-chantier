@@ -1490,23 +1490,45 @@ async function exportPreviewPdf(ov, ifr, title, landscape, btn, toFolder){
 }
 function openPrintable(html){
   const old=document.getElementById('print-preview'); if(old) old.remove();
+  // Orientation : on retire la taille imposée par @page, sinon le navigateur cache le choix Portrait / Paysage
+  // dans sa fenêtre d'impression. L'orientation prévue par le document devient le choix par défaut de l'aperçu.
+  let landscape=/@page\s*\{[^}]*size\s*:[^;}]*landscape/i.test(html);
+  html=html.replace(/(@page\s*\{[^}]*?)size\s*:[^;}]*;?/gi,'$1');
   const title=((html.match(/<title>([^<]*)<\/title>/i)||[])[1]||'Export').trim().replace(/[\\/:*?"<>|]+/g,'_');
   const ov=document.createElement('div');
   ov.id='print-preview';
   ov.style.cssText='position:fixed;inset:0;z-index:950;background:rgba(15,23,42,.55);display:flex;flex-direction:column;align-items:center;padding:12px;gap:10px';
   ov.innerHTML=`<div style="width:100%;max-width:900px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);font-family:var(--font-b)">
       <span style="font-size:14px;font-weight:700;flex:1;min-width:180px">Aperçu — ${dxfEsc(title)}</span>
+      <span style="display:inline-flex;gap:4px" title="Orientation de la page (PDF et impression)">
+        <button class="toggle-btn" data-a="portrait" style="padding:7px 12px;font-size:12px">▯ Portrait</button>
+        <button class="toggle-btn" data-a="paysage" style="padding:7px 12px;font-size:12px">▭ Paysage</button>
+      </span>
       <button class="export-btn rc-only" data-a="rc" style="padding:9px 16px;font-size:13px;background:var(--green);border-color:var(--green)">💾 Enregistrer dans le dossier</button>
       <button class="export-btn" data-a="pdf" style="padding:9px 16px;font-size:13px">📄 Télécharger en PDF</button>
       <button class="import-btn" data-a="print" style="padding:9px 16px;font-size:13px">🖨 Imprimer</button>
       <button class="import-btn" data-a="dl" style="padding:9px 14px;font-size:13px" title="Le document en page web (.html)">⬇ HTML</button>
       <button class="reset-btn" data-a="close" style="padding:9px 14px;font-size:13px">✕ Fermer</button>
-      <div data-a="hint" style="width:100%;font-size:11.5px;color:var(--gray-600)">« Télécharger en PDF » crée directement le fichier PDF (A4). Vous pouvez aussi « Imprimer » si votre navigateur l'autorise.</div>
+      <div data-a="hint" style="width:100%;font-size:11.5px;color:var(--gray-600)">Choisissez Portrait ou Paysage, puis « Télécharger en PDF » (fichier A4) ou « Imprimer » — l'orientation se change aussi dans la fenêtre d'impression.</div>
     </div>
     <iframe title="Aperçu" style="flex:1;width:100%;max-width:900px;border:none;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25)"></iframe>`;
   document.body.appendChild(ov);
   const ifr=ov.querySelector('iframe');
   ifr.srcdoc=html;
+  // orientation choisie : boutons actifs + règle @page injectée dans l'aperçu (pour l'impression)
+  const setOrient=l=>{
+    landscape=l;
+    ov.querySelector('[data-a="portrait"]').classList.toggle('active',!l);
+    ov.querySelector('[data-a="paysage"]').classList.toggle('active',l);
+    try{
+      const d=ifr.contentDocument; if(!d||!d.head) return;
+      let st=d.getElementById('orient-style');
+      if(!st){ st=d.createElement('style'); st.id='orient-style'; d.head.appendChild(st); }
+      st.textContent=l?'@page{size:A4 landscape}':'';   // Portrait : rien d'imposé, l'orientation reste modifiable dans la fenêtre d'impression
+    }catch(e){}
+  };
+  ifr.addEventListener('load',()=>setOrient(landscape));
+  setOrient(landscape);
   const close=()=>{ ov.remove(); document.removeEventListener('keydown',key,true); };
   const key=e=>{ if(e.key==='Escape'){ e.preventDefault(); close(); } };
   document.addEventListener('keydown',key,true);
@@ -1517,8 +1539,10 @@ function openPrintable(html){
       try{ ifr.contentWindow.focus(); ifr.contentWindow.print(); }
       catch(err){ ov.querySelector('[data-a="hint"]').innerHTML='<b style="color:var(--red)">L\'impression est bloquée ici.</b> Utilisez « 📄 Télécharger en PDF ».'; }
     }
-    else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, /landscape/i.test(html), b);
-    else if(b.dataset.a==='rc') exportPreviewPdf(ov, ifr, title, /landscape/i.test(html), b, true);
+    else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, landscape, b);
+    else if(b.dataset.a==='rc') exportPreviewPdf(ov, ifr, title, landscape, b, true);
+    else if(b.dataset.a==='portrait') setOrient(false);
+    else if(b.dataset.a==='paysage') setOrient(true);
     else if(b.dataset.a==='dl') saveFile(title+'.html', html, 'text/html');
   });
 }
