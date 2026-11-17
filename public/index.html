@@ -1279,7 +1279,16 @@ document.addEventListener('dragenter', e => {
 });
 document.addEventListener('dragover', e => { if([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
 document.addEventListener('drop', e => { if([...(e.dataTransfer?.types || [])].includes('Files') && !e.target.closest?.('#addDlg, #drop')) e.preventDefault(); });
-const readURL = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); });
+// lecture d'un fichier en data: URI ; 2e essai par arrayBuffer (certains fichiers OneDrive / verrouillés refusent FileReader)
+const readURL1 = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsDataURL(f); });
+async function readURL(f){
+  try{ return await readURL1(f); }
+  catch(e1){
+    const buf = new Uint8Array(await f.arrayBuffer()); let bin = '';
+    for(let i=0; i<buf.length; i+=0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i+0x8000));
+    return `data:${f.type || 'application/octet-stream'};base64,${btoa(bin)}`;
+  }
+}
 async function shrink(file, max=1800){
   const url = URL.createObjectURL(file);
   try{
@@ -1310,7 +1319,8 @@ async function addFile(file){
   if(!m){
     if(file.size > 40*1048576){ toast(`« ${file.name} » dépasse 40 Mo`); return 'trop lourd (40 Mo maximum)'; }
     try{ m = {...base, kind:'fichier', name:file.name, mime:file.type || (/\.(md|markdown)$/i.test(file.name) ? 'text/markdown' : /\.txt$/i.test(file.name) ? 'text/plain' : 'application/octet-stream'), size:file.size, data:await readURL(file)}; }
-    catch{ toast(`Impossible de lire « ${file.name} »`); return 'fichier illisible'; }
+    catch(e){ console.warn('lecture', file.name, e); toast(`Impossible de lire « ${file.name} » : fichier ouvert ailleurs ou pas encore téléchargé par OneDrive`, 6000);
+      return 'illisible : fermez-le ailleurs, ou copiez-le sur le Bureau puis réessayez'; }
   }
   return saveNewMedia(m, m.kind==='photo' ? 'Photo' : 'Fichier');
 }
