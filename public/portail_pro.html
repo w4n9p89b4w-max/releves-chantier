@@ -1500,6 +1500,25 @@ async function exportPreviewPdf(ov, ifr, title, landscape, btn, toFolder){
     btn.disabled=false; btn.textContent=old;
   }
 }
+/* Impression d'un document découpé en pages (data-pdf-page, ex. le devis : page 1 = plan + métrés,
+   page 2 = détail des coûts) : chaque page est mise à la largeur imprimable A4 puis réduite (zoom) si elle
+   dépasse la hauteur d'une feuille, pour qu'elle tienne ENTIÈRE sur sa feuille sans déborder sur la suivante. */
+function fitPagesForPrint(ifr, landscape){
+  try{
+    const doc=ifr.contentDocument; if(!doc) return;
+    const pages=[...doc.querySelectorAll('[data-pdf-page]')]; if(!pages.length) return;
+    const mmToPx=96/25.4, M=10;
+    const w=Math.floor(((landscape?297:210)-2*M)*mmToPx), h=Math.floor(((landscape?210:297)-2*M)*mmToPx)-12;
+    doc.body.style.width=w+'px'; doc.body.style.padding='0';
+    pages.forEach(pg=>{
+      pg.style.zoom='';
+      const ph=pg.scrollHeight;
+      if(ph>h) pg.style.zoom=String(Math.floor(h/ph*1000)/1000);
+    });
+    const restore=()=>{ doc.body.style.width=''; doc.body.style.padding=''; pages.forEach(pg=>pg.style.zoom=''); ifr.contentWindow.removeEventListener('afterprint',restore); };
+    ifr.contentWindow.addEventListener('afterprint',restore);
+  }catch(e){}
+}
 function openPrintable(html){
   const old=document.getElementById('print-preview'); if(old) old.remove();
   // Orientation : on retire la taille imposée par @page, sinon le navigateur cache le choix Portrait / Paysage
@@ -1523,18 +1542,6 @@ function openPrintable(html){
   document.body.appendChild(ov);
   const ifr=ov.querySelector('iframe');
   ifr.srcdoc=html;
-  // orientation choisie : boutons actifs + règle @page injectée dans l'aperçu (pour l'impression)
-  const setOrient=l=>{
-    landscape=l;
-    try{
-      const d=ifr.contentDocument; if(!d||!d.head) return;
-      let st=d.getElementById('orient-style');
-      if(!st){ st=d.createElement('style'); st.id='orient-style'; d.head.appendChild(st); }
-      st.textContent=l?'@page{size:A4 landscape}':'';   // Portrait : rien d'imposé, l'orientation reste modifiable dans la fenêtre d'impression
-    }catch(e){}
-  };
-  ifr.addEventListener('load',()=>setOrient(landscape));
-  setOrient(landscape);
   const close=()=>{ ov.remove(); document.removeEventListener('keydown',key,true); };
   const key=e=>{ if(e.key==='Escape'){ e.preventDefault(); close(); } };
   document.addEventListener('keydown',key,true);
@@ -1542,7 +1549,7 @@ function openPrintable(html){
     const b=e.target.closest('[data-a]'); if(!b) return;
     if(b.dataset.a==='close') close();
     else if(b.dataset.a==='print'){
-      try{ ifr.contentWindow.focus(); ifr.contentWindow.print(); }
+      try{ fitPagesForPrint(ifr, landscape); ifr.contentWindow.focus(); ifr.contentWindow.print(); }
       catch(err){ ov.querySelector('[data-a="hint"]').innerHTML='<b style="color:var(--red)">L\'impression est bloquée ici.</b> Utilisez « 📄 Télécharger en PDF ».'; }
     }
     else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, landscape, b);
@@ -9997,6 +10004,8 @@ body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:11px;line-he
 h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#1a56db;margin:14px 0 6px;padding-bottom:3px;border-bottom:1px solid #dbeafe}
 .plan{border:1px solid #d1d5db;border-radius:8px;padding:6px;text-align:center;page-break-inside:avoid}
 .plan svg{width:100%;height:auto;max-height:125mm;display:block}
+.p1{page-break-inside:avoid;break-inside:avoid}
+.p1 .grid>div{page-break-inside:auto}
 .p2{page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid}
 .p2>h2:first-child{margin-top:0}
 .compact td{padding:2px 8px}.compact .cost tr.sec td{padding-top:3px}
