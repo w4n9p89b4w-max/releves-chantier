@@ -1060,7 +1060,7 @@ function renderMain(){
     <header class="head">
       <div class="left"><button class="btn sm ghost back" type="button" id="backBtn">‹ Chantiers</button>
         <h2 id="title">${esc(fullName(c)||'Nouveau client')}</h2>${c.exemple?'<span class="chip ex">Exemple</span>':''}</div>
-      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a>${SYNC.role==='viewer'?'<a href="#secCalep">Calepinage</a><a href="#secTolePerf">Tôle perforée</a>':''}<a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
+      <nav class="jump" aria-label="Aller à">${side?'':'<a href="#secClient">Client</a>'}<a href="#secMes">Détail chantier</a><a href="#drawSec">Dessin</a>${SYNC.role==='viewer'?'<a href="#secCalep">Calepinage</a><a href="#secTolePerf">Portail Pro</a>':''}<a href="#secFiles">Photos</a><a href="#secNotes">Remarques</a></nav>
       <div class="actions">${SYNC.role==='viewer'?'<button class="btn sm" type="button" id="refreshBtn">Actualiser</button>':''}<button class="btn sm" type="button" id="openExport">Exporter</button><button class="btn sm primary" type="button" id="openReport">Rapport</button></div>
     </header>
 
@@ -1075,8 +1075,8 @@ function renderMain(){
       <div class="calep-row"><button class="btn primary" type="button" id="calepOpen">Ouvrir le calepinage</button><span class="note" id="calepInfo"></span></div>
     </section>
     <section class="card" id="secTolePerf">
-      <div class="card-h"><h3>Tôle perforée</h3><span class="eyebrow">Au bureau</span></div>
-      <div class="calep-row"><button class="btn primary" type="button" id="ppOpen">Ouvrir le calcul tôle perforée</button><span class="note">« Enregistrer dans le dossier » range le rapport avec les croquis.</span></div>
+      <div class="card-h"><h3>Portail Pro</h3><span class="eyebrow">Au bureau</span></div>
+      <div class="calep-row"><button class="btn primary" type="button" id="ppOpen">Ouvrir Portail Pro</button><span class="note">Tôle perforée, plan, garde-corps… « Enregistrer dans le dossier » range le rapport ou le PDF dans ce dossier.</span></div>
     </section>` : ''}
 
     <section class="card" id="secFiles">
@@ -2340,17 +2340,18 @@ window.addEventListener('message', e => {
 });
 document.addEventListener('keydown', e => { if(e.key==='Escape' && $('#calepLayer') && document.activeElement?.tagName!=='IFRAME') closeCalepinage(); });
 
-/* ---------- Tôle perforée (Portail Pro), consultation ----------
-   portail_pro.html?embed=tole s'ouvre par-dessus le dossier, seule la page Tôle perforée est visible.
-   « Enregistrer dans le dossier » envoie une image A4 du rapport (pp-report) : elle est rangée comme un croquis
-   (kind 'croquis', base = image, rapport:'tole-perforee'), visible dans la bande des croquis, le rapport et le zip. */
+/* ---------- Portail Pro, consultation ----------
+   portail_pro.html?embed=1 (tout le site, tous les onglets) s'ouvre par-dessus le dossier.
+   Page Tôle perforée : « Enregistrer dans le dossier » envoie une image A4 du rapport (pp-report) : elle est rangée comme un croquis
+   (kind 'croquis', base = image, rapport:'tole-perforee'), visible dans la bande des croquis, le rapport et le zip.
+   Aperçu de n'importe quel export : « Enregistrer dans le dossier » envoie le PDF (pp-file) : rangé dans Photos & fichiers. */
 const PP = {c:null};
 function openTolePerf(c){
   if($('#calepLayer')) return;
   PP.c = c;
   const L = document.createElement('div'); L.id = 'calepLayer'; L.dataset.tool = 'pp';
-  L.innerHTML = `<div class="bar"><b>Tôle perforée · ${esc(fullName(c)||'Sans nom')}</b><span class="st">Ouverture…</span>
-    <button class="btn sm primary" type="button" id="ppClose">Fermer</button></div><iframe src="portail_pro.html?embed=tole" title="Calcul tôle perforée"></iframe>`;
+  L.innerHTML = `<div class="bar"><b>Portail Pro · ${esc(fullName(c)||'Sans nom')}</b><span class="st">Ouverture…</span>
+    <button class="btn sm primary" type="button" id="ppClose">Fermer</button></div><iframe src="portail_pro.html?embed=1" title="Portail Pro"></iframe>`;
   document.body.appendChild(L); document.body.style.overflow = 'hidden';
   $('#ppClose').onclick = () => { L.remove(); document.body.style.overflow = ''; PP.c = null; };
 }
@@ -2370,6 +2371,17 @@ window.addEventListener('message', async e => {
     if(ok){ S.media.push(m); if(S.cur?.id===c.id){ renderStrip(); } st.textContent = 'Rapport enregistré avec les croquis ('+m.legende+')'; }
     else st.textContent = msg;
     fr.contentWindow.postMessage({type:'pp-saved', ok, msg}, location.origin);
+  }
+  if(e.data.type === 'pp-file' && /^data:application\/pdf/.test(e.data.data||'')){
+    const c = PP.c, d = e.data.data, name = String(e.data.name||'Portail Pro.pdf').slice(0,120);
+    const m = {id:uid(), chantierId:c.id, kind:'fichier', name, mime:'application/pdf', size:Math.round((d.length - d.indexOf(',') - 1)*3/4), data:d,
+      legende:'', created:Date.now(), ajoutBureau:true};
+    let ok = true, msg = '';
+    try{ await Sync.api('PUT', '/media/'+encodeURIComponent(m.id), m); }
+    catch(err){ ok = false; msg = navigator.onLine ? 'Non enregistré : '+err.message : 'Non enregistré : pas de connexion'; }
+    if(ok){ S.media.push(m); if(S.cur?.id===c.id) renderGallery(); st.textContent = 'PDF enregistré dans Photos & fichiers ('+name+')'; }
+    else st.textContent = msg;
+    fr.contentWindow.postMessage({type:'pp-saved', what:'file', ok, msg}, location.origin);
   }
 });
 
