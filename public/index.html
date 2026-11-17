@@ -327,6 +327,33 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .tot .l{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
 
 .welcome{max-width:560px;margin:12vh auto 0;text-align:center;color:var(--muted)}
+/* Accueil (écran large, aucun dossier ouvert) */
+.home{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:18px;padding-bottom:30px}
+.home .hhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:18px}
+.home .hhead h2{font-size:clamp(28px,3.6vw,38px);line-height:1.05}
+.home .hhead .d{color:var(--muted);font-weight:500;margin-top:4px}.home .hhead .d::first-letter{text-transform:uppercase}
+.home .hhead .actions{display:flex;gap:8px;flex-wrap:wrap}
+.htiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.htile{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:2px;border-left:5px solid var(--line)}
+.htile .v{font:600 30px var(--f-num);line-height:1.1;color:var(--ink)}
+.htile .l{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.03em}
+.htile.st-chiffrer{border-left-color:var(--warn)}.htile.st-devis{border-left-color:var(--accent)}.htile.st-signe{border-left-color:var(--ok)}.htile.st-relancer{border-left-color:var(--danger,#c0392b)}
+.htile[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.htile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hsec{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:4px}
+.hsec h3{font:600 20px var(--f-display)}
+.hsec .note{color:var(--muted);font-size:14px}
+.hgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.hcard{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-height:132px}
+.hcard:hover{border-color:var(--accent)}
+.hcard:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hcard b{font:600 19px var(--f-display);line-height:1.2}
+.hcard .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.hcard .where{color:var(--muted);font-size:14px}
+.hcard .foot{margin-top:auto;display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:13px}
+.hcard .flag{color:var(--danger,#c0392b);font-weight:600}
+.hcard .ty{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:2px 7px}
+.brand{cursor:pointer}
 .welcome h2{color:var(--ink);font-size:34px;margin-bottom:8px}
 .endzone{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:13px}
 
@@ -722,7 +749,7 @@ async function load(){
   S.list.forEach(normalize);
   await loadSuivi();
   renderList(); Sync.flush();
-  if(window.innerWidth > 900 && S.list.length) await openChantier(sorted()[0].id); else renderMain();
+  renderMain();
   storeInfo();
 }
 /* Mode consultation : les dossiers viennent du serveur, rien n'est modifié */
@@ -743,7 +770,6 @@ async function loadRemote(keepCur){
     S.cur = fresh;
     if(fresh.updated !== old.updated){ S.media = await Sync.api('GET', `/chantiers/${encodeURIComponent(fresh.id)}/media`); renderMain(); }
   }
-  else if(window.innerWidth > 900 && S.list.length) await openChantier(sorted()[0].id);
   else renderMain();
 }
 window.addEventListener('focus', () => { if(SYNC.role==='viewer' && SYNC.token && Date.now()-SYNC.last > 20000) loadRemote(true); });
@@ -862,6 +888,48 @@ $('#newBtn').addEventListener('click', async () => {
   await openChantier(c.id); $('#main').scrollTop = 0; setTimeout(()=>$('#f_client')?.focus(), 60);
 });
 
+/* ---------- Accueil (écran large, aucun dossier ouvert) : chiffres par statut + cartes des chantiers ---------- */
+const TYPE_LBL = {toiture:'Toiture', portail:'Portail & clôture', perforee:'Tôle perforée'};
+const HFILTERS = [
+  {k:'tous', l:'Tous les chantiers', f:c => true},
+  {k:'chiffrer', l:'À chiffrer', f:c => c.statut==='chiffrer'},
+  {k:'devis', l:'Devis envoyés', f:c => c.statut==='devis'},
+  {k:'signe', l:'Signés', f:c => c.statut==='signe'},
+  {k:'relancer', l:'À relancer', f:c => aRelancer(c)}];
+function renderHome(m){
+  const hf = HFILTERS.find(x=>x.k===S.hf) || HFILTERS[0];
+  const reel = S.list.filter(c=>!c.exemple);
+  const items = sorted().filter(hf.f);
+  const today = new Date().toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  const card = c => {
+    const late = aRelancer(c);
+    return `<button class="hcard" type="button" data-open="${c.id}">
+      <b>${esc(fullName(c)||'Nouveau client')}</b>
+      <span class="row">${c.exemple?'<span class="chip ex">Exemple</span>':''}<span class="chip st-${c.statut}">${STATUTS[c.statut]||''}</span>${(c.types||[]).map(t=>`<span class="ty">${TYPE_LBL[t]||t}</span>`).join('')}</span>
+      <span class="where">${esc([c.entreprise, [c.ville, c.cp].filter(Boolean).join(' ')||c.adresse].filter(Boolean).join(' · ')) || '&nbsp;'}</span>
+      <span class="foot"><span>${c.date ? 'Visite le <span class="num">'+new Date(c.date).toLocaleDateString('fr-FR')+'</span>' : ''}</span>${late ? `<span class="flag">à relancer · ${joursSans(c)} j</span>` : `<span>modifié le <span class="num">${new Date(c.updated).toLocaleDateString('fr-FR')}</span></span>`}</span>
+    </button>`; };
+  m.innerHTML = `<div class="home">
+    <header class="hhead"><div><h2>Accueil</h2><div class="d">${today}</div></div>
+      <div class="actions">${SYNC.role==='viewer' ? '<button class="btn" type="button" id="homeRefresh">Actualiser</button>' : '<button class="btn primary" type="button" id="homeNew">+ Nouveau chantier</button>'}</div></header>
+    <div class="htiles">${HFILTERS.map(x => `<button class="htile st-${x.k}" type="button" data-hf="${x.k}" aria-pressed="${x.k===hf.k}"><span class="v">${reel.filter(x.f).length}</span><span class="l">${x.l}</span></button>`).join('')}</div>
+    <div class="hsec"><h3>${hf.k==='tous' ? 'Derniers chantiers' : hf.l}</h3><span class="note">${items.length} dossier${items.length>1?'s':''}</span></div>
+    <div class="hgrid">${items.map(card).join('') || '<p class="note">Aucun chantier ici.</p>'}</div>
+  </div>`;
+  m.onclick = e => {
+    const o = e.target.closest('[data-open]'); if(o){ openChantier(o.dataset.open); return; }
+    const t = e.target.closest('[data-hf]'); if(t){ S.hf = t.dataset.hf==='tous' || S.hf===t.dataset.hf ? null : t.dataset.hf; renderHome(m); }
+  };
+  if($('#homeNew')) $('#homeNew').onclick = () => $('#newBtn').click();
+  if($('#homeRefresh')) $('#homeRefresh').onclick = async () => { await loadRemote(); toast('Dossiers à jour'); };
+}
+async function goHome(){
+  await flushDrawing();
+  S.cur = null; S.media = []; S.side = 'list';
+  $('#app').classList.remove('detail');
+  renderList(); renderMain(); $('#main').scrollTop = 0;
+}
+$('.brand').addEventListener('click', goHome);
 async function openChantier(id){
   await flushDrawing();
   S.cur = byId(id);
@@ -919,7 +987,7 @@ function renderSide(){
     lp.hidden=true; cp.hidden=false;
     cp.innerHTML = `<button class="btn sm" type="button" id="toList">‹ Tous les chantiers</button>${clientHTML(true)}`;
     cp.oninput = onField; lockIfViewer();
-    $('#toList').onclick = async () => { await flushDrawing(); S.side='list'; renderMain(); };
+    $('#toList').onclick = goHome;
   } else { lp.hidden=false; cp.hidden=true; cp.innerHTML=''; }
 }
 
@@ -1054,7 +1122,8 @@ function renderMain(){
   const m = $('#main');
   renderSide();
   const side = clientInSide();
-  if(!S.cur){ m.innerHTML = `<div class="welcome"><h2>Aucun chantier ouvert</h2><p>Choisissez un chantier dans la liste ou créez-en un.</p></div>`; return; }
+  m.onclick = null;
+  if(!S.cur){ renderHome(m); return; }
   const c = S.cur;
   m.innerHTML = `<div class="page">
     <header class="head">
