@@ -1542,7 +1542,7 @@ function openPrintable(html){
       <button class="import-btn" data-a="print" style="padding:9px 16px;font-size:13px">🖨 Imprimer</button>
       <button class="import-btn" data-a="dl" style="padding:9px 14px;font-size:13px" title="Le document en page web (.html)">⬇ HTML</button>
       <button class="reset-btn" data-a="close" style="padding:9px 14px;font-size:13px">✕ Fermer</button>
-      <div data-a="hint" style="width:100%;font-size:11.5px;color:var(--gray-600)">« Télécharger en PDF » crée directement le fichier PDF (A4). Vous pouvez aussi « Imprimer » (l'orientation se change dans la fenêtre d'impression).</div>
+      <div data-a="hint" style="width:100%;font-size:11.5px;color:var(--gray-600)">« Télécharger en PDF » crée directement le fichier PDF (A4 paysage). Vous pouvez aussi « Imprimer » (l'orientation se change dans la fenêtre d'impression).</div>
     </div>
     <iframe title="Aperçu" style="flex:1;width:100%;max-width:900px;border:none;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25)"></iframe>`;
   document.body.appendChild(ov);
@@ -1559,8 +1559,8 @@ function openPrintable(html){
       try{ fitPagesForPrint(ifr); ifr.contentWindow.focus(); ifr.contentWindow.print(); }
       catch(err){ ov.querySelector('[data-a="hint"]').innerHTML='<b style="color:var(--red)">L\'impression est bloquée ici.</b> Utilisez « 📄 Télécharger en PDF ».'; }
     }
-    else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, landscape, b);
-    else if(b.dataset.a==='rc') exportPreviewPdf(ov, ifr, title, landscape, b, true);
+    else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, true, b);   // le PDF enregistré est toujours en A4 paysage
+    else if(b.dataset.a==='rc') exportPreviewPdf(ov, ifr, title, true, b, true);
     else if(b.dataset.a==='dl') saveFile(title+'.html', html, 'text/html');
   });
 }
