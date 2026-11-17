@@ -1461,15 +1461,27 @@ async function exportPreviewPdf(ov, ifr, title, landscape, btn, toFolder){
     await new Promise(r=>setTimeout(r,250));
     const doc=ifr.contentDocument, body=doc.body;
     const bodyPad=body.style.padding; body.style.padding='0';
-    const canvas=await window.html2canvas(body,{scale:2,backgroundColor:'#ffffff',windowWidth:cssW,width:cssW,useCORS:true});
-    body.style.padding=bodyPad;
     const {jsPDF}=window.jspdf;
     const pdf=new jsPDF({orientation:landscape?'l':'p',unit:'mm',format:'a4'});
-    const imgW=pageW-2*M, pxPerMm=canvas.width/imgW, sliceH=Math.floor((pageH-2*M)*pxPerMm);
-    for(let y=0, n=0; y<canvas.height; y+=sliceH, n++){
+    const imgW=pageW-2*M;
+    // Document découpé en pages (data-pdf-page) : une feuille par page, réduite si besoin pour tenir entière
+    const pages=[...doc.querySelectorAll('[data-pdf-page]')];
+    if(pages.length){
+      for(let n=0; n<pages.length; n++){
+        const cv=await window.html2canvas(pages[n],{scale:2,backgroundColor:'#ffffff',windowWidth:cssW,useCORS:true});
+        const k=Math.min(imgW/cv.width, (pageH-2*M)/cv.height), w=cv.width*k, h=cv.height*k;
+        if(n>0) pdf.addPage();
+        pdf.addImage(cv.toDataURL('image/jpeg',0.92),'JPEG',M+(imgW-w)/2,M,w,h);
+      }
+    }
+    const canvas=pages.length?null:await window.html2canvas(body,{scale:2,backgroundColor:'#ffffff',windowWidth:cssW,width:cssW,useCORS:true});
+    body.style.padding=bodyPad;
+    const pxPerMm=canvas?canvas.width/imgW:1, sliceH=Math.floor((pageH-2*M)*pxPerMm);
+    if(canvas) for(let y=0, n=0; y<canvas.height; y+=sliceH, n++){
       const h=Math.min(sliceH, canvas.height-y);
       const part=document.createElement('canvas'); part.width=canvas.width; part.height=h;
-      part.getContext('2d').drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
+      const pc=part.getContext('2d'); pc.drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
+      if(n>0 && pc.getImageData(0,0,part.width,h).data.every(v=>v>=250)) break;   // reste tout blanc : pas de page vide
       if(n>0) pdf.addPage();
       pdf.addImage(part.toDataURL('image/jpeg',0.92),'JPEG',M,M,imgW,h/pxPerMm);
     }
@@ -1500,16 +1512,12 @@ function openPrintable(html){
   ov.style.cssText='position:fixed;inset:0;z-index:950;background:rgba(15,23,42,.55);display:flex;flex-direction:column;align-items:center;padding:12px;gap:10px';
   ov.innerHTML=`<div style="width:100%;max-width:900px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);font-family:var(--font-b)">
       <span style="font-size:14px;font-weight:700;flex:1;min-width:180px">Aperçu — ${dxfEsc(title)}</span>
-      <span style="display:inline-flex;gap:4px" title="Orientation de la page (PDF et impression)">
-        <button class="toggle-btn" data-a="portrait" style="padding:7px 12px;font-size:12px">▯ Portrait</button>
-        <button class="toggle-btn" data-a="paysage" style="padding:7px 12px;font-size:12px">▭ Paysage</button>
-      </span>
       <button class="export-btn rc-only" data-a="rc" style="padding:9px 16px;font-size:13px;background:var(--green);border-color:var(--green)">💾 Enregistrer dans le dossier</button>
       <button class="export-btn" data-a="pdf" style="padding:9px 16px;font-size:13px">📄 Télécharger en PDF</button>
       <button class="import-btn" data-a="print" style="padding:9px 16px;font-size:13px">🖨 Imprimer</button>
       <button class="import-btn" data-a="dl" style="padding:9px 14px;font-size:13px" title="Le document en page web (.html)">⬇ HTML</button>
       <button class="reset-btn" data-a="close" style="padding:9px 14px;font-size:13px">✕ Fermer</button>
-      <div data-a="hint" style="width:100%;font-size:11.5px;color:var(--gray-600)">Choisissez Portrait ou Paysage, puis « Télécharger en PDF » (fichier A4) ou « Imprimer » — l'orientation se change aussi dans la fenêtre d'impression.</div>
+      <div data-a="hint" style="width:100%;font-size:11.5px;color:var(--gray-600)">« Télécharger en PDF » crée directement le fichier PDF (A4). Vous pouvez aussi « Imprimer » (l'orientation se change dans la fenêtre d'impression).</div>
     </div>
     <iframe title="Aperçu" style="flex:1;width:100%;max-width:900px;border:none;border-radius:10px;background:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25)"></iframe>`;
   document.body.appendChild(ov);
@@ -1518,8 +1526,6 @@ function openPrintable(html){
   // orientation choisie : boutons actifs + règle @page injectée dans l'aperçu (pour l'impression)
   const setOrient=l=>{
     landscape=l;
-    ov.querySelector('[data-a="portrait"]').classList.toggle('active',!l);
-    ov.querySelector('[data-a="paysage"]').classList.toggle('active',l);
     try{
       const d=ifr.contentDocument; if(!d||!d.head) return;
       let st=d.getElementById('orient-style');
@@ -1541,8 +1547,6 @@ function openPrintable(html){
     }
     else if(b.dataset.a==='pdf') exportPreviewPdf(ov, ifr, title, landscape, b);
     else if(b.dataset.a==='rc') exportPreviewPdf(ov, ifr, title, landscape, b, true);
-    else if(b.dataset.a==='portrait') setOrient(false);
-    else if(b.dataset.a==='paysage') setOrient(true);
     else if(b.dataset.a==='dl') saveFile(title+'.html', html, 'text/html');
   });
 }
@@ -9992,7 +9996,10 @@ body{font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:11px;line-he
 .client span{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:3px}
 h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#1a56db;margin:14px 0 6px;padding-bottom:3px;border-bottom:1px solid #dbeafe}
 .plan{border:1px solid #d1d5db;border-radius:8px;padding:6px;text-align:center;page-break-inside:avoid}
-.plan svg{width:100%;height:auto;max-height:95mm;display:block}
+.plan svg{width:100%;height:auto;max-height:125mm;display:block}
+.p2{page-break-before:always;break-before:page;page-break-inside:avoid;break-inside:avoid}
+.p2>h2:first-child{margin-top:0}
+.compact td{padding:2px 8px}.compact .cost tr.sec td{padding-top:3px}
 .plan svg text{font-family:Arial,Helvetica,sans-serif}
 .grid{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
 .grid>div{flex:1 1 0;min-width:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;page-break-inside:avoid}
@@ -10030,13 +10037,15 @@ tfoot td,.tot td{font-weight:700;background:#f9fafb;border-top:1px solid #d1d5db
   }</tbody></table></div>`:'';
 
   const html=`<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Devis_${esc(numero)}</title><style>${css}</style></head><body>
+<div class="p1" data-pdf-page>
 <div class="top">
   <div class="brand">Portail Pro<small>Fabrication de portails, garde-corps et tôles perforées</small></div>
   <div class="meta"><div class="t">DEVIS</div>N° <b>${esc(numero)}</b><br>Date : <b>${now.toLocaleDateString('fr-FR')}</b>${gate?`<br>${esc(gate)}`:''}</div>
 </div>
-<div class="client"><div><span>Client</span></div><div><span>Chantier / référence</span></div></div>
 ${planSvg?`<h2>Plan</h2><div class="plan">${planSvg}</div>`:''}
 ${(tolesHtml||tubesHtml||surfHtml)?`<h2>Métrés</h2><div class="grid">${tubesHtml}${surfHtml}${tolesHtml}</div>`:''}
+</div>
+<div class="p2${(secHtml.match(/<tr/g)||[]).length>30?' compact':''}" data-pdf-page>
 ${secHtml?`<h2>Détail des coûts</h2><div class="cost"><table><thead><tr><th>Désignation</th><th>Réf.</th><th>Quantité</th><th>Prix unit. HT</th><th>Total HT</th></tr></thead><tbody>${secHtml}</tbody></table></div>`:''}
 <div class="bottom">
   <div class="notes">Remarques :</div>
@@ -10050,6 +10059,7 @@ ${secHtml?`<h2>Détail des coûts</h2><div class="cost"><table><thead><tr><th>D�
   </tbody></table></div>
 </div>
 <div class="foot">Devis établi le ${now.toLocaleDateString('fr-FR')} — Portail Pro</div>
+</div>
 </body></html>`;
   dwOpenPrint(html);
 }
