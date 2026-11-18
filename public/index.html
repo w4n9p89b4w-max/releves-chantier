@@ -2314,10 +2314,32 @@ function bestRows(ar, A, ph){
   }
   return best.rows;
 }
+// À l'impression, les croquis sont redessinés SANS l'écriture à la main ni les textes : seulement cadres, traits, flèches et cotes
+// (si un croquis n'a que de l'écriture, on garde son image telle quelle). Les croquis sur image (rapport tôle perforée) ne changent pas.
+const sansEcriture = m => m.base || !m.ops?.length ? null : m.ops.filter(o => o.t!=='pen' && o.t!=='text');
+// cadre serré autour des traits restants (sans la feuille de départ) : les cadres remplissent l'image
+function opsRect(ops, k, marge){
+  resolveCotes(ops, k); let r = null;
+  for(const o of ops){ if(o.orphan) continue; const b = bbox(o, k), e = marge*k;
+    r = r ? [Math.min(r[0], b[0]-e), Math.min(r[1], b[1]-e), Math.max(r[2], b[2]+e), Math.max(r[3], b[3]+e)] : [b[0]-e, b[1]-e, b[2]+e, b[3]+e]; }
+  return r;
+}
+function printImage(m, ops){
+  const k = m.k ?? kOf(m.w||1600, m.h||1150), r = opsRect(ops, k, 60);
+  const [x0, y0, x1, y1] = r, W = x1-x0, H = y1-y0, f = Math.min(1.5, 3200/Math.max(W, H));
+  const out = document.createElement('canvas'); out.width = Math.round(W*f); out.height = Math.round(H*f);
+  const c = out.getContext('2d'); c.setTransform(f, 0, 0, f, -x0*f, -y0*f);
+  grid(c, x0, y0, x1, y1, f); ops.forEach(o => drawOp(c, o, k));
+  return {data: out.toDataURL('image/jpeg', 0.9), h: H/k};
+}
 async function crLayout(cr){
-  const sz = await Promise.all(cr.map(m => imgSize(m.data))), ar = sz.map(([w,h]) => w/h);
+  const ops = cr.map(m => { const o = sansEcriture(m); return o && o.length ? o : null; });
+  const pimg = cr.map((m, i) => { if(!ops[i]) return null; try{ return printImage(m, structuredClone(ops[i])); }catch{ ops[i] = null; return null; } });
+  const src = cr.map((m, i) => pimg[i]?.data || m.data);
+  const sz = await Promise.all(src.map(d => imgSize(d))), ar = sz.map(([w,h]) => w/h);
   // taille réelle du dessin (l'image enregistrée est réduite au-delà de 3200 px : on repart des traits)
   const ph = cr.map((m, i) => { try{
+      if(pimg[i]) return Math.max(1, pimg[i].h);
       if(!m.ops?.length) return sz[i][1];
       const k = m.k ?? kOf(m.w||1600, m.h||1150), r = contentRect(structuredClone(m.ops), k, m, 80);
       return Math.max(1, (r[3]-r[1]) / k);
@@ -2337,7 +2359,7 @@ async function crLayout(cr){
     const sw = x.rows.map(r => `calc((100vw - ${(r.length-1)*CR_GAP}mm) / ${r.reduce((t,i)=>t+ar[i]*P[i], 0).toFixed(5)})`);
     const sh = `calc((100vh - ${24 + x.rows.length*(CR_CAP+CR_GAP)}mm) / ${x.rows.reduce((t,r)=>t+Math.max(...r.map(i=>P[i])), 0).toFixed(5)})`;
     return `<div class="crl v${v}" style="--s:min(${[...sw, sh].join(',')})">${x.rows.map(r => `<div class="crrow">${r.map(i =>
-      `<figure><img src="${cr[i].data}" alt="" style="width:calc(var(--s) * ${(ar[i]*P[i]).toFixed(5)});height:calc(var(--s) * ${P[i].toFixed(5)})"><figcaption>${esc(cr[i].legende||'')}</figcaption></figure>`).join('')}</div>`).join('')}</div>`; }).join('');
+      `<figure><img src="${src[i]}" alt="" style="width:calc(var(--s) * ${(ar[i]*P[i]).toFixed(5)});height:calc(var(--s) * ${P[i].toFixed(5)})"><figcaption>${esc(cr[i].legende||'')}</figcaption></figure>`).join('')}</div>`).join('')}</div>`; }).join('');
 }
 function openReport(){
   const c=S.cur, r=$('#report');
