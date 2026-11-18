@@ -463,6 +463,8 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
   .rep .crlay figure{flex:none;margin:0;display:flex;flex-direction:column;align-items:center}
   .rep .crlay figure img{display:block;flex:none;min-height:0;object-fit:contain;border:0;max-width:none}
   .rep .crlay figcaption{max-width:100%;height:4mm;line-height:4mm}
+  .rep .crlay .crhead{align-self:stretch;height:5mm;line-height:5mm;font-weight:700;font-size:9.5pt;border-top:.5mm solid #333;padding-top:1mm;margin-top:1mm;box-sizing:content-box}
+  .rep .crlay .crhead:first-child{border-top:0;margin-top:0;padding-top:0}
   .rep figcaption{font-size:8pt;margin-top:1mm;flex:none;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 </style>
@@ -2298,7 +2300,7 @@ const imgSize = src => new Promise(res => { const i = new Image(); i.onload = ()
 // Croquis à la même échelle : chaque croquis est imprimé à la taille réelle de son dessin multipliée par une échelle
 // commune s (le plus chargé, donc le plus grand, prend plus de place). On range les croquis en lignes (dans l'ordre)
 // et on choisit le découpage qui permet la plus grande échelle commune. ar = largeur / hauteur, ph = hauteur du dessin.
-const CR_GAP = 3, CR_CAP = 6;   // mm : espace entre croquis, légende sous chaque ligne
+const CR_GAP = 3, CR_CAP = 6, CR_HEAD = 8;   // mm ; CR_HEAD = titre + trait de séparation de chaque croquis   // mm : espace entre croquis, légende sous chaque ligne
 function crScale(rows, ar, ph, A){   // place de largeur A, hauteur 1 (env. 150 mm de haut)
   const mm = 1/150, pm = Math.max(...ph);
   const sw = Math.min(...rows.map(r => (A - (r.length-1)*CR_GAP*mm) / r.reduce((t,i)=>t+ar[i]*ph[i]/pm, 0)));
@@ -2307,19 +2309,23 @@ function crScale(rows, ar, ph, A){   // place de largeur A, hauteur 1 (env. 150 
 }
 // Lignes « album photo » : chaque ligne remplit la largeur (hauteur = largeur / somme des proportions), toutes les lignes
 // réduites ensemble si elles dépassent la hauteur. Score : taille des formes, sans en écraser une.
-function rowsScore(rows, ar, A){
+function rowsScore(rows, ar, A, ng){
   const mm = 1/150, S = rows.map(r => r.reduce((t,i)=>t+ar[i], 0));
-  const T = S.reduce((t,x)=>t + A/x, 0), k = Math.min(1, (1 - rows.length*(CR_CAP+CR_GAP)*mm) / T);
+  const T = S.reduce((t,x)=>t + A/x, 0), k = Math.min(1, (1 - (rows.length*(CR_CAP+CR_GAP) + (ng||0)*CR_HEAD)*mm) / T);
   let tot = 0, small = Infinity;
   rows.forEach((r,ri) => { const hh = A/S[ri]*k; r.forEach(i => { const t = Math.sqrt(ar[i])*hh; tot += t; small = Math.min(small, t); }); });
   return tot + 0.5*rows.flat().length*small;
 }
-function bestRows(ar, A, ph){
-  const n = ar.length; let best = null;
-  if(n > 12){ const c = Math.ceil(Math.sqrt(n*A/1.4)); const rows=[]; for(let i=0;i<n;i+=c) rows.push([...Array(Math.min(c,n-i)).keys()].map(j=>i+j)); return rows; }
+// grp[i] = croquis d'origine : une ligne ne mélange jamais deux croquis (coupure obligatoire entre eux)
+function bestRows(ar, A, ph, grp){
+  const n = ar.length; let best = null; grp = grp || ar.map(() => 0);
+  const ng = new Set(grp).size; let must = 0; for(let i=1;i<n;i++) if(grp[i]!==grp[i-1]) must |= 1<<(i-1);
+  if(n > 12){ const c = Math.ceil(Math.sqrt(n*A/1.4)); const rows=[]; let cur=[];
+    for(let i=0;i<n;i++){ if(cur.length && (cur.length>=c || grp[i]!==grp[i-1])){ rows.push(cur); cur=[]; } cur.push(i); } rows.push(cur); return rows; }
   for(let mask=0; mask < 1<<(n-1); mask++){
+    if((mask & must) !== must) continue;
     const rows=[[0]]; for(let i=1;i<n;i++){ if(mask & 1<<(i-1)) rows.push([i]); else rows[rows.length-1].push(i); }
-    const sc = rowsScore(rows, ar, A); if(!best || sc > best.sc*1.0001) best = {rows, sc};
+    const sc = rowsScore(rows, ar, A, ng); if(!best || sc > best.sc*1.0001) best = {rows, sc};
   }
   return best.rows;
 }
@@ -2360,22 +2366,22 @@ function splitShapes(ops, k){
 async function crLayout(cr){
   // les morceaux à imprimer : chaque forme de chaque croquis (sans l'écriture), ou l'image d'origine
   const pieces = [];
-  cr.forEach(m => {
+  cr.forEach((m, g) => {
     const o = sansEcriture(m);
     if(o && o.length){ try{
       const k = m.k ?? kOf(m.w||1600, m.h||1150), parts = splitShapes(structuredClone(o), k);
-      parts.forEach((os, j) => pieces.push({data: printImage(m, os).data, cap: (m.legende||'') + (parts.length>1 ? ` · ${j+1}/${parts.length}` : '')}));
+      parts.forEach((os, j) => pieces.push({g, data: printImage(m, os).data, cap: parts.length>1 ? `${j+1}/${parts.length}` : ''}));
       return; }catch{} }
-    pieces.push({data: m.data, cap: m.legende||''});
+    pieces.push({g, data: m.data, cap: ''});
   });
   const src = pieces.map(x => x.data);
   const sz = await Promise.all(src.map(d => imgSize(d))), ar = sz.map(([w,h]) => w/h);
-  const ph = pieces.map(() => 1);   // toutes les formes aussi grandes que possible
+  const ph = pieces.map(() => 1), grp = pieces.map(x => x.g), ng = new Set(grp).size;   // toutes les formes aussi grandes que possible
   const pm = Math.max(...ph), P = ph.map(h => h/pm);
   const steps = [0,0.4,0.55,0.7,0.85,1,1.2,1.45,1.7,2,2.4,2.9,3.5,4.2,5];
   const variants = [], pick = [];
   steps.forEach((a,i) => { const mid = i===0 ? 0.3 : i<steps.length-1 ? (a+steps[i+1])/2 : a*1.2;
-    const rows = bestRows(ar, mid, ph), key = JSON.stringify(rows);
+    const rows = bestRows(ar, mid, ph, grp), key = JSON.stringify(rows);
     let v = variants.findIndex(x => x.key===key); if(v<0){ variants.push({key, rows}); v = variants.length-1; }
     pick.push([a, v]); });
   const css = '@media print{' + pick.map(([a,v]) => (a ? `@container pa (aspect-ratio > ${a}){` : '') + variants.map((x,j) => `.crlay .crl.v${j}{display:${j===v?'flex':'none'}}`).join('') + (a ? '}' : '')).join('') + '}';
@@ -2385,7 +2391,7 @@ async function crLayout(cr){
     // 100vw × 100vh = zone imprimable ; 24 mm pour le titre de la page)
     // hauteur de chaque ligne = min(remplir la largeur, part de la hauteur de la feuille) ; 100vw × 100vh = zone imprimable
     const S = x.rows.map(r => r.reduce((t,i)=>t+ar[i], 0)), inv = S.reduce((t,v)=>t+1/v, 0);
-    return `<div class="crl v${v}">${x.rows.map((r,ri) => `<div class="crrow" style="--h:min(calc((100vw - ${(r.length-1)*CR_GAP}mm) / ${S[ri].toFixed(5)}), calc((100vh - ${24 + x.rows.length*(CR_CAP+CR_GAP)}mm) * ${(1/S[ri]/inv).toFixed(5)}))">${r.map(i =>
+    return `<div class="crl v${v}">${x.rows.map((r,ri) => `${ri===0 || grp[r[0]]!==grp[x.rows[ri-1][0]] ? `<div class="crhead">${esc(cr[grp[r[0]]].legende || 'Croquis '+(grp[r[0]]+1))}</div>` : ''}<div class="crrow" style="--h:min(calc((100vw - ${(r.length-1)*CR_GAP}mm) / ${S[ri].toFixed(5)}), calc((100vh - ${24 + x.rows.length*(CR_CAP+CR_GAP) + ng*CR_HEAD}mm) * ${(1/S[ri]/inv).toFixed(5)}))">${r.map(i =>
       `<figure><img src="${src[i]}" alt="" style="width:calc(var(--h) * ${ar[i].toFixed(5)});height:var(--h)"><figcaption>${esc(pieces[i].cap)}</figcaption></figure>`).join('')}</div>`).join('')}</div>`; }).join('');
 }
 function openReport(){
