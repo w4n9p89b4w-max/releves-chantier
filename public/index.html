@@ -2305,12 +2305,21 @@ function crScale(rows, ar, ph, A){   // place de largeur A, hauteur 1 (env. 150 
   const sh = (1 - rows.length*(CR_CAP+CR_GAP)*mm) / rows.reduce((t,r)=>t+Math.max(...r.map(i=>ph[i]/pm)), 0);
   return Math.min(sw, sh);
 }
+// Lignes « album photo » : chaque ligne remplit la largeur (hauteur = largeur / somme des proportions), toutes les lignes
+// réduites ensemble si elles dépassent la hauteur. Score : taille des formes, sans en écraser une.
+function rowsScore(rows, ar, A){
+  const mm = 1/150, S = rows.map(r => r.reduce((t,i)=>t+ar[i], 0));
+  const T = S.reduce((t,x)=>t + A/x, 0), k = Math.min(1, (1 - rows.length*(CR_CAP+CR_GAP)*mm) / T);
+  let tot = 0, small = Infinity;
+  rows.forEach((r,ri) => { const hh = A/S[ri]*k; r.forEach(i => { const t = Math.sqrt(ar[i])*hh; tot += t; small = Math.min(small, t); }); });
+  return tot + 0.5*rows.flat().length*small;
+}
 function bestRows(ar, A, ph){
   const n = ar.length; let best = null;
   if(n > 12){ const c = Math.ceil(Math.sqrt(n*A/1.4)); const rows=[]; for(let i=0;i<n;i+=c) rows.push([...Array(Math.min(c,n-i)).keys()].map(j=>i+j)); return rows; }
   for(let mask=0; mask < 1<<(n-1); mask++){
     const rows=[[0]]; for(let i=1;i<n;i++){ if(mask & 1<<(i-1)) rows.push([i]); else rows[rows.length-1].push(i); }
-    const sc = crScale(rows, ar, ph, A); if(!best || sc > best.sc*1.0001) best = {rows, sc};
+    const sc = rowsScore(rows, ar, A); if(!best || sc > best.sc*1.0001) best = {rows, sc};
   }
   return best.rows;
 }
@@ -2332,18 +2341,36 @@ function printImage(m, ops){
   grid(c, x0, y0, x1, y1, f); ops.forEach(o => drawOp(c, o, k));
   return {data: out.toDataURL('image/jpeg', 0.9), h: H/k};
 }
+// Formes séparées : traits qui se touchent (ou presque) + leurs cotes = une forme. Chaque forme est imprimée à part, en grand.
+function splitShapes(ops, k){
+  resolveCotes(ops, k);
+  const L = ops.filter(o => !o.orphan), n = L.length, up = [...Array(n).keys()];
+  const find = i => up[i]===i ? i : (up[i] = find(up[i])), join = (a,b) => { up[find(a)] = find(b); };
+  const bb = L.map(o => bbox(o, k)), tol = 35*k, ids = {};
+  L.forEach((o,i) => { if(o.id) ids[o.id] = i; });
+  for(let a=0; a<n; a++){
+    if(L[a].t==='cote' && L[a].ref in ids) join(a, ids[L[a].ref]);
+    for(let b=a+1; b<n; b++){ const A=bb[a], B=bb[b];
+      if(A[0]-tol <= B[2] && B[0]-tol <= A[2] && A[1]-tol <= B[3] && B[1]-tol <= A[3]) join(a, b); }
+  }
+  const g = new Map(); L.forEach((o,i) => { const r = find(i); if(!g.has(r)) g.set(r, []); g.get(r).push(o); });
+  // ordre de lecture : de haut en bas, puis de gauche à droite
+  return [...g.values()].map(os => ({os, r: opsRect(os, k, 0)})).sort((x,y) => Math.abs(x.r[1]-y.r[1]) > 300*k ? x.r[1]-y.r[1] : x.r[0]-y.r[0]).map(x => x.os);
+}
 async function crLayout(cr){
-  const ops = cr.map(m => { const o = sansEcriture(m); return o && o.length ? o : null; });
-  const pimg = cr.map((m, i) => { if(!ops[i]) return null; try{ return printImage(m, structuredClone(ops[i])); }catch{ ops[i] = null; return null; } });
-  const src = cr.map((m, i) => pimg[i]?.data || m.data);
+  // les morceaux à imprimer : chaque forme de chaque croquis (sans l'écriture), ou l'image d'origine
+  const pieces = [];
+  cr.forEach(m => {
+    const o = sansEcriture(m);
+    if(o && o.length){ try{
+      const k = m.k ?? kOf(m.w||1600, m.h||1150), parts = splitShapes(structuredClone(o), k);
+      parts.forEach((os, j) => pieces.push({data: printImage(m, os).data, cap: (m.legende||'') + (parts.length>1 ? ` · ${j+1}/${parts.length}` : '')}));
+      return; }catch{} }
+    pieces.push({data: m.data, cap: m.legende||''});
+  });
+  const src = pieces.map(x => x.data);
   const sz = await Promise.all(src.map(d => imgSize(d))), ar = sz.map(([w,h]) => w/h);
-  // taille réelle du dessin (l'image enregistrée est réduite au-delà de 3200 px : on repart des traits)
-  const ph = cr.map((m, i) => { try{
-      if(pimg[i]) return Math.max(1, pimg[i].h);
-      if(!m.ops?.length) return sz[i][1];
-      const k = m.k ?? kOf(m.w||1600, m.h||1150), r = contentRect(structuredClone(m.ops), k, m, 80);
-      return Math.max(1, (r[3]-r[1]) / k);
-    }catch{ return sz[i][1]; } });
+  const ph = pieces.map(() => 1);   // toutes les formes aussi grandes que possible
   const pm = Math.max(...ph), P = ph.map(h => h/pm);
   const steps = [0,0.4,0.55,0.7,0.85,1,1.2,1.45,1.7,2,2.4,2.9,3.5,4.2,5];
   const variants = [], pick = [];
@@ -2356,10 +2383,10 @@ async function crLayout(cr){
   el.innerHTML = `<style>${css}</style>` + variants.map((x,v) => {
     // échelle commune --s (longueur par unité de dessin), calculée par le navigateur selon la feuille (à l'impression,
     // 100vw × 100vh = zone imprimable ; 24 mm pour le titre de la page)
-    const sw = x.rows.map(r => `calc((100vw - ${(r.length-1)*CR_GAP}mm) / ${r.reduce((t,i)=>t+ar[i]*P[i], 0).toFixed(5)})`);
-    const sh = `calc((100vh - ${24 + x.rows.length*(CR_CAP+CR_GAP)}mm) / ${x.rows.reduce((t,r)=>t+Math.max(...r.map(i=>P[i])), 0).toFixed(5)})`;
-    return `<div class="crl v${v}" style="--s:min(${[...sw, sh].join(',')})">${x.rows.map(r => `<div class="crrow">${r.map(i =>
-      `<figure><img src="${src[i]}" alt="" style="width:calc(var(--s) * ${(ar[i]*P[i]).toFixed(5)});height:calc(var(--s) * ${P[i].toFixed(5)})"><figcaption>${esc(cr[i].legende||'')}</figcaption></figure>`).join('')}</div>`).join('')}</div>`; }).join('');
+    // hauteur de chaque ligne = min(remplir la largeur, part de la hauteur de la feuille) ; 100vw × 100vh = zone imprimable
+    const S = x.rows.map(r => r.reduce((t,i)=>t+ar[i], 0)), inv = S.reduce((t,v)=>t+1/v, 0);
+    return `<div class="crl v${v}">${x.rows.map((r,ri) => `<div class="crrow" style="--h:min(calc((100vw - ${(r.length-1)*CR_GAP}mm) / ${S[ri].toFixed(5)}), calc((100vh - ${24 + x.rows.length*(CR_CAP+CR_GAP)}mm) * ${(1/S[ri]/inv).toFixed(5)}))">${r.map(i =>
+      `<figure><img src="${src[i]}" alt="" style="width:calc(var(--h) * ${ar[i].toFixed(5)});height:var(--h)"><figcaption>${esc(pieces[i].cap)}</figcaption></figure>`).join('')}</div>`).join('')}</div>`; }).join('');
 }
 function openReport(){
   const c=S.cur, r=$('#report');
