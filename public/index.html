@@ -421,7 +421,6 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .orient button{min-height:38px;padding:0 14px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2);color:var(--ink);font-weight:600;font-size:14px}
 .orient button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 /* rapport imprimé en paysage : photos 4 par ligne, croquis 2 par ligne */
-@media print and (orientation: landscape){ .rep .pics{grid-template-columns:repeat(4,1fr)!important} .rep figure img{max-height:52mm} .rep .kv{grid-template-columns:repeat(4,1fr)} }
 .exp-list button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:12px 14px;min-height:56px}
 .exp-list button b{font-size:16px}
 .exp-list button span{font-size:13px;color:var(--muted)}
@@ -442,11 +441,19 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
   .rep .kv div{padding:1.5px 0}
   .rep .notes{font-size:9.5pt}
   .rep ul{font-size:9pt;margin:0}
-  .rep .pics{grid-template-columns:repeat(3,1fr)!important;gap:8px}
-  .rep .pics.cr{grid-template-columns:repeat(2,1fr)!important}
-  .rep figure img{max-height:62mm;object-fit:contain;background:#fff}
-  .rep .pics.cr figure img{max-height:85mm}   /* tient aussi sur une page en paysage */
-  .rep figcaption{font-size:8pt;margin-top:2px}
+  /* Page 1 : toutes les infos + les photos ; page 2 : les croquis seuls. Chaque page = 1 feuille (100vh = hauteur imprimable),
+     en portrait comme en paysage (choisi dans la fenêtre d'impression) : les photos / croquis se partagent la place qui reste,
+     le nombre de colonnes suit la forme de cette place (@container, règles écrites par openReport selon le nombre d'images). */
+  .rep .pg{height:100vh;display:flex;flex-direction:column;overflow:hidden;break-after:page;page-break-after:always}
+  .rep .pg:last-child{break-after:auto;page-break-after:auto}
+  .rep .pg.p2 h1{font-size:14pt}
+  .rep .pg.p2 h2{margin-top:6px}
+  .rep .pg .kv{grid-template-columns:repeat(auto-fill,minmax(52mm,1fr))}
+  .rep .picarea{flex:1 1 0;min-height:25mm;container:pa/size}
+  .rep .picarea .pics{height:100%;grid-template-columns:repeat(var(--c,3),minmax(0,1fr))!important;grid-auto-rows:minmax(0,1fr);gap:3mm}
+  .rep .picarea figure{display:flex;flex-direction:column;min-height:0;min-width:0}
+  .rep .picarea figure img{flex:1 1 0;min-height:0;width:100%;height:100%;object-fit:contain;object-position:center top;background:#fff;border:0}
+  .rep figcaption{font-size:8pt;margin-top:1mm;flex:none;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 }
 </style>
 
@@ -2255,6 +2262,19 @@ function reportText(c){
 }
 const perforeeRows = c => { const f=c.perforee||{}; return [['Utilisation',listVal(f.usage)],['Perforation',listVal(f.motif)],['Matière',listVal(f.matiere)],['Largeur',f.largeur&&f.largeur+' mm'],['Hauteur',f.hauteur&&f.hauteur+' mm'],['Épaisseur',f.epaisseur&&f.epaisseur+' mm'],['Quantité',f.quantite],['Fixation / ossature',f.fixation],['Teinte',f.ral]]; };
 const kv = pairs => `<div class="kv">${pairs.filter(([,v])=>v!==''&&v!=null&&v!==false).map(([k,v])=>`<div><span>${esc(k)}</span><span>${esc(v===true?'Oui':v)}</span></div>`).join('')}</div>`;
+/* Colonnes des photos / croquis à l'impression : pour chaque forme de la place disponible (largeur / hauteur),
+   le nombre de colonnes qui donne les plus grandes images (images de proportion ar). Règles @container écrites dans le rapport. */
+function picCols(sel, n, ar){
+  if(!n) return '';
+  const best = A => { let bc = 1, bs = 0;   // place de largeur A, hauteur 1
+    for(let c=1; c<=n; c++){ const r = Math.ceil(n/c), w = A/c, hh = 1/r, s = Math.min(w, hh*ar); if(s > bs*1.0001){ bs = s; bc = c; } }
+    return bc; };
+  const steps = [0.4,0.55,0.7,0.85,1,1.2,1.45,1.7,2,2.4,2.9,3.5,4.2,5,6];
+  let css = `@media print{${sel} .pics{--c:${best(0.3)}}`;
+  steps.forEach((a,i) => { const mid = i<steps.length-1 ? (a+steps[i+1])/2 : a*1.2;
+    css += `@container pa (aspect-ratio > ${a}){${sel} .pics{--c:${best(mid)}}}`; });
+  return css + '}';
+}
 function openReport(){
   const c=S.cur, r=$('#report');
   const photos=S.media.filter(m=>m.kind==='photo'), cr=S.media.filter(m=>m.kind==='croquis'), files=S.media.filter(m=>m.kind==='fichier');
@@ -2262,7 +2282,6 @@ function openReport(){
     <p style="color:#5a6870;margin:6px 0 0">Visite du ${c.date?new Date(c.date).toLocaleDateString('fr-FR',{dateStyle:'long'}):'—'} · EcoTole</p>
     <h2>Client</h2>${kv([['Nom',c.nom],['Prénom',c.prenom],['Entreprise',c.entreprise],['Adresse',c.adresse],['Code postal',c.cp],['Ville',c.ville],['Téléphone',c.tel],['E-mail',c.email],['Statut',STATUTS[c.statut]],['GPS',c.geo?`${c.geo.lat}, ${c.geo.lng}`:'']])}`;
   if(c.notes) h += `<h2>Remarques</h2><div class="notes">${esc(c.notes)}</div>`;
-  if(cr.length) h += `<h2>Croquis</h2><div class="pics cr">${cr.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
   if(c.types.includes('toiture')){
     const t=c.toiture;
     h += `<h2>Toiture</h2>${kv([['Couverture existante',listVal(t.existante)],['État',listVal(t.etat)],['Charpente',listVal(t.charpente)],['Isolation',listVal(t.isolation)],['Accès',t.acces],['Produit proposé',listVal(t.produit)],['Couleur',listVal(t.couleur)]])}`;
@@ -2272,8 +2291,12 @@ function openReport(){
     h += `<h2>Portail &amp; clôture</h2>${kv([['Type',listVal(p.type)],['Ouverture (vu de l’extérieur)',listVal(p.sens)],['Remplissage',listVal(p.remplissage)],['Passage entre piliers',p.largeur&&p.largeur+' mm'],['Hauteur',p.hauteur&&p.hauteur+' mm'],['Hauteur piliers',p.hPiliers&&p.hPiliers+' mm'],['Refoulement',p.refoulement&&p.refoulement+' mm'],['Teinte',p.ral]])}`;
   }
   if(c.types.includes('perforee')) h += `<h2>Tôle perforée</h2>${kv(perforeeRows(c))}`;
-  if(photos.length) h += `<h2>Photos</h2><div class="pics">${photos.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div>`;
   if(files.length) h += `<h2>Fichiers joints</h2><ul>${files.map(f=>`<li>${esc(f.name)}${f.legende?' — '+esc(f.legende):''}</li>`).join('')}</ul>`;
+  const figs = (list, cls) => `<div class="picarea ${cls}"><div class="pics${cls==='pa-cr'?' cr':''}">${list.map(m=>`<figure><img src="${m.data}" alt=""><figcaption>${esc(m.legende)}</figcaption></figure>`).join('')}</div></div>`;
+  if(photos.length) h += `<h2>Photos</h2>${figs(photos, 'pa-ph')}`;
+  h = `<section class="pg p1">${h}</section>`;
+  if(cr.length) h += `<section class="pg p2"><h1>${esc(fullName(c)||'Sans nom')}</h1><h2>Croquis</h2>${figs(cr, 'pa-cr')}</section>`;
+  h = `<style>${picCols('.pa-ph', photos.length, 4/3)}${picCols('.pa-cr', cr.length, 1.414)}</style>` + h;
   r.innerHTML = `<div class="rep-bar"><button class="btn" type="button" id="rClose">‹ Retour</button><span style="flex:1"></span>
       <button class="btn" type="button" id="rCopy">Copier le résumé</button>
       ${inFrame?'':'<button class="btn" type="button" id="rJson">Exporter ce chantier</button><button class="btn primary" type="button" id="rPrint">PDF / Imprimer</button>'}</div>
