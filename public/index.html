@@ -476,7 +476,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
     <div class="pane" id="listPane">
     <button class="btn primary" id="newBtn" type="button">+ Nouveau chantier</button>
     <section class="recap" id="recap" hidden aria-labelledby="rcTitle"></section>
-    <input class="search" id="q" type="search" placeholder="Rechercher un client, une ville…" style="margin-top:10px" autocomplete="off">
+    <input class="search" id="q" type="search" placeholder="Rechercher un client, une ville…" style="margin-top:10px" autocomplete="off" name="recherche-chantier" data-lpignore="true" data-1p-ignore data-bwignore="true" data-form-type="other">
     <div class="rfilter" id="rfilter" hidden><span id="rfTxt"></span><button type="button" id="rfClr">Tout afficher ✕</button></div>
     <div class="list" id="list" role="list"></div>
     <div class="sidefoot">
@@ -908,7 +908,11 @@ $('#list').addEventListener('click', e => {
   const b=e.target.closest('.item'); if(b) openChantier(b.dataset.id);
 });
 $('#list').addEventListener('keydown', e => { const b=e.target.closest('.item'); if(b && e.target===b && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); openChantier(b.dataset.id); } });
-$('#q').addEventListener('input', e => { S.q=e.target.value; renderList(); });
+// Recherche : seulement ce qui est vraiment tapé. Le navigateur (ou un gestionnaire de mots de passe) remplit parfois
+// la case tout seul au rechargement de la page (ex. « Vue en plan toiture ») : ce remplissage est ignoré.
+const typed = e => (typeof InputEvent !== 'undefined' && e instanceof InputEvent) || e.target.value === '';
+$('#q').addEventListener('input', e => { if(!typed(e) || ($('#homeQ') && !$('#side').offsetParent)){ e.target.value = S.q; return; } S.q=e.target.value; renderList(); });
+window.addEventListener('pageshow', () => { if(!document.activeElement?.matches?.('#q,#homeQ')){ S.q = ''; $('#q').value = ''; if($('#homeQ')){ $('#homeQ').value = ''; homeCards(); } } });
 $('#newBtn').addEventListener('click', async () => {
   const c = newChantier(); await DB.put('chantiers', c); S.list.push(c);
   await openChantier(c.id); $('#main').scrollTop = 0; setTimeout(()=>$('#f_client')?.focus(), 60);
@@ -954,7 +958,7 @@ function renderHome(m){
     <header class="hhead">
       <div class="hbrand">${$('.brand svg').outerHTML}<div><h2>Relevés Chantier</h2><div class="d">${today}</div></div></div>
       <div class="actions">${viewer ? '<button class="btn" type="button" id="homeRefresh">Actualiser</button>' : '<button class="btn primary" type="button" id="homeNew">+ Nouveau chantier</button>'}</div></header>
-    <input class="search" id="homeQ" type="search" placeholder="Rechercher un client, une ville…" autocomplete="off" value="${esc(S.q)}">
+    <input class="search" id="homeQ" type="search" placeholder="Rechercher un client, une ville…" autocomplete="off" name="recherche-chantier" data-lpignore="true" data-1p-ignore data-bwignore="true" data-form-type="other" value="${esc(S.q)}">
     <div class="htiles" id="homeTiles"></div>
     <div class="hsec" id="homeSec"></div>
     <div class="hgrid" id="homeGrid"></div>
@@ -972,7 +976,7 @@ function renderHome(m){
     const t = e.target.closest('[data-hf]'); if(t){ S.hf = t.dataset.hf==='tous' || S.hf===t.dataset.hf ? null : t.dataset.hf; homeCards(); }
   };
   m.onkeydown = e => { const o = e.target.closest('[data-open]'); if(o && e.target===o && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); openChantier(o.dataset.open); } };
-  $('#homeQ').oninput = e => { S.q = e.target.value; $('#q').value = S.q; homeCards(); };
+  $('#homeQ').oninput = e => { if(!typed(e)){ e.target.value = S.q; return; } S.q = e.target.value; $('#q').value = S.q; homeCards(); };
   if($('#homeNew')) $('#homeNew').onclick = () => $('#newBtn').click();
   if($('#homeRefresh')) $('#homeRefresh').onclick = async () => { await loadRemote(); toast('Dossiers à jour'); };
   if($('#homeSave')) $('#homeSave').onclick = () => $('#exportAll').click();
