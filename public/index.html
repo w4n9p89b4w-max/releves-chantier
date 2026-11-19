@@ -2338,8 +2338,21 @@ function opsRect(ops, k, marge){
     r = r ? [Math.min(r[0], b[0]-e), Math.min(r[1], b[1]-e), Math.max(r[2], b[2]+e), Math.max(r[3], b[3]+e)] : [b[0]-e, b[1]-e, b[2]+e, b[3]+e]; }
   return r;
 }
+// zone d'une cote AVEC son texte (le texte est à côté du trait : sinon il est coupé au recadrage)
+function coteLabelBox(o, k){
+  if(o.t!=='cote' || !o.txt || !o.a) return null;
+  const ang=Math.atan2(o.b[1]-o.a[1], o.b[0]-o.a[0]), nx=-Math.sin(ang), ny=Math.cos(ang);
+  const sz=Math.round(34*k), tw=o.txt.length*sz*0.62, sd=o.side??-1, off=sz*0.8 + Math.abs(nx)*tw/2;
+  const cx=(o.a[0]+o.b[0])/2+sd*nx*off, cy=(o.a[1]+o.b[1])/2+sd*ny*off;
+  return [cx-tw/2-sz*0.3, cy-sz*0.8, cx+tw/2+sz*0.3, cy+sz*0.8];
+}
 function printImage(m, ops){
-  const k = m.k ?? kOf(m.w||1600, m.h||1150), r = opsRect(ops, k, 60);
+  // traits et textes de cote grossis si la forme est grande (sinon les mesures sont illisibles une fois réduites)
+  let k = m.k ?? kOf(m.w||1600, m.h||1150);
+  const r0 = opsRect(ops, k, 0), dim = Math.max(r0[2]-r0[0], r0[3]-r0[1], 1); k = Math.min(Math.max(k, dim/1100), dim/600);   // texte ≈ 3 à 6 % de la forme
+  let r = opsRect(ops, k, 50);
+  ops.forEach(o => { const b = coteLabelBox(o, k); if(b) r = [Math.min(r[0],b[0]), Math.min(r[1],b[1]), Math.max(r[2],b[2]), Math.max(r[3],b[3])]; });
+  r = [r[0]-20*k, r[1]-20*k, r[2]+20*k, r[3]+20*k];
   const [x0, y0, x1, y1] = r, W = x1-x0, H = y1-y0, f = Math.min(1.5, 3200/Math.max(W, H));
   const out = document.createElement('canvas'); out.width = Math.round(W*f); out.height = Math.round(H*f);
   const c = out.getContext('2d'); c.setTransform(f, 0, 0, f, -x0*f, -y0*f);
