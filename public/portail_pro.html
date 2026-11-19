@@ -5397,6 +5397,13 @@ async function toleReportImage(title){
   }
   return {img: cv.toDataURL('image/jpeg', 0.9), w: cv.width, h: cv.height};
 }
+function rcNewTole(){
+  if(typeof tolePlates!=='undefined') tolePlates.splice(0, tolePlates.length);
+  const d=window._dw; if(d && d.plates) d.plates.splice(0, d.plates.length);
+  try{ if(typeof dwChanged==='function') dwChanged(); }catch(e){}
+  if(typeof renderTolePlates==='function') renderTolePlates();
+  const ts=document.getElementById('t-surface'); if(ts) ts.value=''; if(typeof updateTolePlatesSummary==='function') updateTolePlatesSummary();
+}
 // Fichier PDF (aperçu d'un export) envoyé au dossier : rangé dans Photos & fichiers
 let RC_WAIT = null;
 function rcSendFile(name, data){
@@ -5411,7 +5418,9 @@ window.addEventListener('message', e => {
   const btn = document.getElementById('rc-save-btn');
   if(e.data.type === 'pp-open'){ RC_CLIENT = e.data.client || ''; }
   if(e.data.type === 'pp-saved' && e.data.what === 'file'){ if(RC_WAIT){ const f = RC_WAIT; RC_WAIT = null; f(e.data); } return; }
-  if(e.data.type === 'pp-saved' && btn){ btn.disabled = false; btn.innerHTML = e.data.ok ? '✓ Enregistré — encore ?' : '💾 Enregistrer dans le dossier'; if(!e.data.ok) alert(e.data.msg || 'Non enregistré'); }
+  if(e.data.type === 'pp-saved' && btn){ btn.disabled = false; btn.innerHTML = '💾 Enregistrer dans le dossier'; if(!e.data.ok){ alert(e.data.msg || 'Non enregistré'); return; }
+    // chaque enregistrement = un rapport à part : on propose de repartir d'une page vide pour la tôle suivante
+    appConfirm('✓ Rapport enregistré dans le dossier (avec les croquis).\n\nCommencer une nouvelle tôle perforée ? Les plaques de ce calcul (et les tôles dessinées dans l’onglet Plan) seront retirées, pour que le prochain enregistrement soit un rapport séparé.', rcNewTole, 'Nouvelle tôle'); }
 });
 
 function exportTolePagePDF(){
