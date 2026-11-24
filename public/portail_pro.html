@@ -8398,7 +8398,7 @@ function dwSnapOnLines(pt,lockX,lockY,from,R,excl){
       c={x:ax+u*dx, y:ay+u*dy};
     }
     const dd=Math.max(0, Math.hypot(c.x-pt.x,c.y-pt.y)-(band||0));
-    if(dd<bd){ bd=dd; best={x:Math.round(c.x*10)/10, y:Math.round(c.y*10)/10}; }
+    if(dd<bd){ bd=dd; best={x:Math.round(c.x*10)/10, y:Math.round(c.y*10)/10, vert:Math.abs(dx)<1e-6, horiz:Math.abs(dy)<1e-6}; }
   });
   return best;
 }
@@ -8478,7 +8478,23 @@ function dwSnap(pt, from, excl){
   const onLine=(best||d.snaps.line===false)?null:dwSnapOnLines(pt,lockX,lockY,from,R,excl);
   let guides=[];
   if(best){ x=best.x; y=best.y; snapped=true; stype=best.type; if(best.src) guides.push({x1:best.src.x,y1:best.src.y,x2:x,y2:y}); }
-  else if(onLine){ x=onLine.x; y=onLine.y; snapped=true; stype='line'; }
+  else if(onLine){
+    x=onLine.x; y=onLine.y; snapped=true; stype='line';
+    // sur une ligne droite (face de tube, côté de tôle) : on s'aligne en plus sur un point proche d'une autre forme,
+    // ex. la face du dessous d'une traverse prolongée jusqu'à la face extérieure du montant
+    if(d.snaps.align!==false && !lockX && !lockY && (onLine.vert || onLine.horiz)){
+      let ap=null, bdA=R;
+      dwSnapPoints(excl).forEach(p=>{
+        if(excl===-1 && p.inner) return;
+        const dd=(onLine.vert?Math.abs(p.y-pt.y):Math.abs(p.x-pt.x))+Math.hypot(p.x-pt.x,p.y-pt.y)*1e-6;   // à égalité : le plus proche
+        if(dd<bdA && Math.hypot(p.x-x,p.y-y)>0.5){ bdA=dd; ap=p; }
+      });
+      if(ap){
+        if(onLine.vert) y=ap.y; else x=ap.x;
+        guides.push({x1:ap.x,y1:ap.y,x2:x,y2:y}); stype='align';
+      }
+    }
+  }
   else if(d.snaps.align!==false && (()=>{
     // Alignement entre formes : le point se cale à l'horizontale et/ou à la verticale d'un point d'une autre
     // forme (extrémité, sommet, milieu, centre), avec une ligne guide en pointillés — comme le repérage en DAO.
