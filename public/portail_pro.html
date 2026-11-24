@@ -7937,6 +7937,8 @@ function dwRevertToReleve(){
     t.w=0; t.h=0; t.th=0;
     delete t.ol; delete t.u; delete t.sig; delete t.r;
   });
+  // les mesures retrouvent leurs points du relevé
+  (window._dw.dims||[]).forEach(dm=>{ if(!dm.r) return; dm.x1=dm.r.x1; dm.y1=dm.r.y1; dm.x2=dm.r.x2; dm.y2=dm.r.y2; delete dm.r; });
 }
 
 // Valide les tubes : chaque trait de relevé reçoit sa section (celle de son choix, sinon le tube général),
@@ -7973,6 +7975,7 @@ function dwApplyTubes(){
     }
   });
   dwTrimTJunctions(rel);
+  dwDimsToOuterFaces(rel);
   d.sel=null;
   d.undo=[];
 }
@@ -8045,6 +8048,27 @@ function dwBuildChains(list){
   nodes.forEach((n,k)=>{ if(n.t.length===1 && !used.has(n.t[0])){ const c=walk(k); if(c.length) chains.push(c); } });
   nodes.forEach((n,k)=>{ if(n.t.some(t=>!used.has(t))){ const c=walk(k); if(c.length) chains.push(c); } });
   return chains;
+}
+/* Mesures posées sur le relevé : quand les traits deviennent des tubes, chaque extrémité de mesure posée sur un
+   trait est recalée sur la face EXTÉRIEURE du tube (pour un tube intérieur, la face tournée à l'opposé de
+   l'autre extrémité) : la cote reste une mesure hors tout. Les points du relevé sont gardés (dm.r) pour le retour
+   à l'étape ①. */
+function dwDimsToOuterFaces(rel){
+  const d=window._dw, R2=v=>Math.round(v*100)/100;
+  (d.dims||[]).forEach(dm=>{
+    if(!dm.r) dm.r={x1:dm.x1,y1:dm.y1,x2:dm.x2,y2:dm.y2};
+    const P=[{x:dm.r.x1,y:dm.r.y1},{x:dm.r.x2,y:dm.r.y2}];
+    const out=P.map((pt,k)=>{
+      const other=P[1-k];
+      const t=(rel||[]).find(t=>t.r && dwDistToSeg(pt,t.r)<1);
+      if(!t || !(t.th>0)) return pt;
+      const faces=dwTubeOuterFaces(t); if(!faces.length) return pt;
+      const proj=f=>{ const dx=f[2]-f[0], dy=f[3]-f[1], L2=dx*dx+dy*dy||1, u=((pt.x-f[0])*dx+(pt.y-f[1])*dy)/L2; return {x:f[0]+u*dx, y:f[1]+u*dy}; };
+      // face la plus éloignée de l'autre extrémité = mesure hors tout
+      return faces.map(proj).sort((a,b)=>Math.hypot(b.x-other.x,b.y-other.y)-Math.hypot(a.x-other.x,a.y-other.y))[0];
+    });
+    dm.x1=R2(out[0].x); dm.y1=R2(out[0].y); dm.x2=R2(out[1].x); dm.y2=R2(out[1].y);
+  });
 }
 function dwSetTubeProfileFor(id,val){
   const t=window._dw.tubes.find(x=>x.id===id); if(!t) return;
