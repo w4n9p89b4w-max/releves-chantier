@@ -7957,29 +7957,21 @@ function dwApplyTubes(){
     t.w=prof.w; t.h=prof.h;
     t.th=d.face==='h'?prof.h:prof.w;
   });
-  // chaînes = tubes consécutifs bout à bout
-  const T=d.tubes;
-  let i=0;
-  while(i<T.length){
-    let j=i;
-    while(j+1<T.length && Math.hypot(T[j].x2-T[j+1].x1,T[j].y2-T[j+1].y1)<0.5) j++;
-    const chain=T.slice(i,j+1);
-    if(chain.some(t=>t.releve)){
-      dwResolveChain(chain);
-      // chaîne refermée (cadre) : le contour EXTÉRIEUR des tubes se superpose au contour relevé
-      const first=chain[0], last=chain[chain.length-1];
-      if(chain.length>=3 && Math.hypot(last.x2-first.x1,last.y2-first.y1)<0.5 && chain.every(t=>t.r)){
-        let rMinX=Infinity,rMinY=Infinity,oMinX=Infinity,oMinY=Infinity;
-        chain.forEach(t=>{
-          rMinX=Math.min(rMinX,t.r.x1,t.r.x2); rMinY=Math.min(rMinY,t.r.y1,t.r.y2);
-          dwTubeGeom(t,chain).pts.forEach(q=>{ oMinX=Math.min(oMinX,q.x); oMinY=Math.min(oMinY,q.y); });
-        });
-        const sx=rMinX-oMinX, sy=rMinY-oMinY, R2=v=>Math.round(v*100)/100;
-        chain.forEach(t=>{ t.x1=R2(t.x1+sx); t.y1=R2(t.y1+sy); t.x2=R2(t.x2+sx); t.y2=R2(t.y2+sy); t.sig=dwTubeSig(t); });
-      }
+  // chaînes = tubes reliés bout à bout, QUEL QUE SOIT l'ordre ou le sens dans lequel les traits ont été tracés
+  dwBuildChains(rel).forEach(chain=>{
+    dwResolveChain(chain);
+    // cadre (fermé ou ouvert, ex. en U) : le contour EXTÉRIEUR des tubes se superpose au contour relevé, pour
+    // que les traverses et montants posés à l'intérieur tombent pile sur les faces (raccords en T)
+    if(chain.length>=2 && chain.every(t=>t.r)){
+      let rMinX=Infinity,rMinY=Infinity,oMinX=Infinity,oMinY=Infinity;
+      chain.forEach(t=>{
+        rMinX=Math.min(rMinX,t.r.x1,t.r.x2); rMinY=Math.min(rMinY,t.r.y1,t.r.y2);
+        dwTubeGeom(t,chain).pts.forEach(q=>{ oMinX=Math.min(oMinX,q.x); oMinY=Math.min(oMinY,q.y); });
+      });
+      const sx=rMinX-oMinX, sy=rMinY-oMinY, R2=v=>Math.round(v*100)/100;
+      chain.forEach(t=>{ t.x1=R2(t.x1+sx); t.y1=R2(t.y1+sy); t.x2=R2(t.x2+sx); t.y2=R2(t.y2+sy); t.sig=dwTubeSig(t); });
     }
-    i=j+1;
-  }
+  });
   dwTrimTJunctions(rel);
   d.sel=null;
   d.undo=[];
@@ -8020,6 +8012,40 @@ function dwTrimTJunctions(list){
   });
 }
 
+/* Regroupe les traits du relevé en chaînes ordonnées (cadre fermé ou ouvert), d'après leurs extrémités communes
+   et non d'après l'ordre de tracé : chaque trait est remis dans le sens de la chaîne (retourné si besoin), pour
+   que les coins soient raccordés en onglet et que le cadre garde ses mesures extérieures. Un point où se
+   rejoignent plus de 2 traits (té) coupe la chaîne. */
+function dwBuildChains(list){
+  const nodes=[], nodeOf=(x,y)=>{ let k=nodes.findIndex(n=>Math.hypot(n.x-x,n.y-y)<0.5); if(k<0){ nodes.push({x,y,t:[]}); k=nodes.length-1; } return k; };
+  const ends=new Map();
+  list.forEach(t=>{ const a=nodeOf(t.x1,t.y1), b=nodeOf(t.x2,t.y2); ends.set(t,[a,b]); nodes[a].t.push(t); nodes[b].t.push(t); });
+  const flip=t=>{
+    [t.x1,t.x2]=[t.x2,t.x1]; [t.y1,t.y2]=[t.y2,t.y1];
+    if(t.r){ const r=t.r; t.r={x1:r.x2,y1:r.y2,x2:r.x1,y2:r.y1}; }
+    if(t.u) t.u={x:-t.u.x,y:-t.u.y};
+    t.sig=dwTubeSig(t);
+    const e=ends.get(t); ends.set(t,[e[1],e[0]]);
+  };
+  const used=new Set(), chains=[];
+  const walk=start=>{
+    const chain=[]; let cur=start;
+    while(true){
+      if(nodes[cur].t.length>2 && chain.length) break;               // té : la chaîne s'arrête
+      const t=nodes[cur].t.find(x=>!used.has(x)); if(!t) break;
+      used.add(t);
+      if(ends.get(t)[0]!==cur) flip(t);
+      chain.push(t);
+      cur=ends.get(t)[1];
+      if(cur===start) break;                                          // cadre refermé
+    }
+    return chain;
+  };
+  // d'abord depuis les bouts libres (chaînes ouvertes), puis le reste (cadres fermés)
+  nodes.forEach((n,k)=>{ if(n.t.length===1 && !used.has(n.t[0])){ const c=walk(k); if(c.length) chains.push(c); } });
+  nodes.forEach((n,k)=>{ if(n.t.some(t=>!used.has(t))){ const c=walk(k); if(c.length) chains.push(c); } });
+  return chains;
+}
 function dwSetTubeProfileFor(id,val){
   const t=window._dw.tubes.find(x=>x.id===id); if(!t) return;
   if(!val){ delete t.pf; }
