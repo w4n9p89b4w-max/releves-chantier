@@ -8366,7 +8366,7 @@ function dwTubeOuterFaces(t){
   if(!onEdge) return [plus,minus];
   return side>0?[plus]:[minus];
 }
-function dwSnapOnLines(pt,lockX,lockY,from,R,excl){
+function dwSnapSegs(excl){
   const d=window._dw, segs=[];
   const skip=id=>excl!=null && excl>=0 && id===excl;
   d.tubes.forEach(t=>{
@@ -8380,6 +8380,32 @@ function dwSnapOnLines(pt,lockX,lockY,from,R,excl){
     if(skip(pl.id)) return;
     for(let i=0;i<pl.pts.length;i++){ const a=pl.pts[i], b=pl.pts[(i+1)%pl.pts.length]; segs.push([a[0],a[1],b[0],b[1]]); }
   });
+  return segs;
+}
+/* Intersection : croisement de deux lignes (face de tube x côté de tôle, deux faces, etc.) proche du curseur.
+   Le croisement en T compte aussi (une ligne qui s'arrête sur une autre). */
+function dwSnapInter(pt,R,excl,lockX,lockY,from){
+  const segs=dwSnapSegs(excl).filter(g=>(g[2]-g[0])**2+(g[3]-g[1])**2>1e-6);
+  // on ne garde que les lignes qui passent près du curseur
+  const near=segs.filter(([ax,ay,bx,by])=>{ const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy; let u=((pt.x-ax)*dx+(pt.y-ay)*dy)/L2; u=Math.max(0,Math.min(1,u)); return Math.hypot(ax+u*dx-pt.x, ay+u*dy-pt.y)<R; });
+  let best=null, bd=R;
+  for(let i=0;i<near.length;i++) for(let j=i+1;j<near.length;j++){
+    const [ax,ay,bx,by]=near[i], [cx,cy,ex,ey]=near[j];
+    const rx=bx-ax, ry=by-ay, sx=ex-cx, sy=ey-cy, den=rx*sy-ry*sx;
+    if(Math.abs(den)<1e-9*Math.hypot(rx,ry)*Math.hypot(sx,sy)) continue;     // parallèles
+    const u=((cx-ax)*sy-(cy-ay)*sx)/den, v=((cx-ax)*ry-(cy-ay)*rx)/den;
+    const tu=0.05/Math.hypot(rx,ry), tv=0.05/Math.hypot(sx,sy);
+    if(u<-tu || u>1+tu || v<-tv || v>1+tv) continue;
+    const x=ax+u*rx, y=ay+u*ry;
+    if(lockY && Math.abs(y-from.y)>0.5) continue;
+    if(lockX && Math.abs(x-from.x)>0.5) continue;
+    const dd=Math.hypot(x-pt.x,y-pt.y);
+    if(dd<bd){ bd=dd; best={x:Math.round(x*10)/10, y:Math.round(y*10)/10, type:'inter'}; }
+  }
+  return best;
+}
+function dwSnapOnLines(pt,lockX,lockY,from,R,excl){
+  const segs=dwSnapSegs(excl);
   let best=null, bd=R;
   segs.forEach(([ax,ay,bx,by,band])=>{
     const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy;
@@ -8475,6 +8501,7 @@ function dwSnap(pt, from, excl){
       if(dd<bd){ bd=dd; best={x:lockY?p.x:from.x, y:lockY?from.y:p.y, type:'align', src:p}; }
     });
   }
+  if(!best && d.snaps.line!==false){ const ip=dwSnapInter(pt,R,excl,lockX,lockY,from); if(ip) best=ip; }
   const onLine=(best||d.snaps.line===false)?null:dwSnapOnLines(pt,lockX,lockY,from,R,excl);
   let guides=[];
   if(best){ x=best.x; y=best.y; snapped=true; stype=best.type; if(best.src) guides.push({x1:best.src.x,y1:best.src.y,x2:x,y2:y}); }
@@ -8489,7 +8516,14 @@ function dwSnap(pt, from, excl){
         const dd=(onLine.vert?Math.abs(p.y-pt.y):Math.abs(p.x-pt.x))+Math.hypot(p.x-pt.x,p.y-pt.y)*1e-6;   // à égalité : le plus proche
         if(dd<bdA && Math.hypot(p.x-x,p.y-y)>0.5){ bdA=dd; ap=p; }
       });
-      if(ap){
+      // ... ou sur une face droite (verticale / horizontale) d'un tube ou un côté de tôle prolongé
+      let fv=null;
+      dwSnapSegs(excl).forEach(([ax,ay,bx,by])=>{
+        if(onLine.horiz && Math.abs(ax-bx)<0.05){ const dd=Math.abs(ax-pt.x); if(dd<bdA && Math.abs(ax-x)>0.5){ bdA=dd; fv={c:ax, p:Math.abs(ay-y)<Math.abs(by-y)?{x:ax,y:ay}:{x:bx,y:by}}; ap=null; } }
+        if(onLine.vert && Math.abs(ay-by)<0.05){ const dd=Math.abs(ay-pt.y); if(dd<bdA && Math.abs(ay-y)>0.5){ bdA=dd; fv={c:ay, p:Math.abs(ax-x)<Math.abs(bx-x)?{x:ax,y:ay}:{x:bx,y:by}}; ap=null; } }
+      });
+      if(fv){ if(onLine.vert) y=fv.c; else x=fv.c; guides.push({x1:fv.p.x,y1:fv.p.y,x2:x,y2:y}); stype='align'; }
+      else if(ap){
         if(onLine.vert) y=ap.y; else x=ap.x;
         guides.push({x1:ap.x,y1:ap.y,x2:x,y2:y}); stype='align';
       }
@@ -8543,7 +8577,7 @@ function dwSnap(pt, from, excl){
   return {x,y,snapped,stype,guides};
 }
 // Repère d'accrochage, forme selon le type (comme en DAO) : ▫ extrémité, △ milieu, ◎ centre, ◇ quadrant, ✕ sur ligne.
-const DW_SNAP_LBL={end:'Extrémité',mid:'Milieu',center:'Centre',quad:'Quadrant',line:'Sur la ligne',align:'Alignement'};
+const DW_SNAP_LBL={inter:'Intersection',end:'Extrémité',mid:'Milieu',center:'Centre',quad:'Quadrant',line:'Sur la ligne',align:'Alignement'};
 function dwSnapMarker(c,px){
   const x=c.x, y=c.y, k=7/px, col=c.snapped?'#2f9e44':'#e8a13d';
   const st=`fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke"`;
@@ -8556,6 +8590,7 @@ function dwSnapMarker(c,px){
   });
   switch(c.snapped?c.stype:null){
     case 'end': s+=`<rect x="${x-k}" y="${y-k}" width="${2*k}" height="${2*k}" ${st}/>`; break;
+    case 'inter': s+=`<rect x="${x-k}" y="${y-k}" width="${2*k}" height="${2*k}" ${st}/><line x1="${x-k}" y1="${y-k}" x2="${x+k}" y2="${y+k}" ${st}/><line x1="${x-k}" y1="${y+k}" x2="${x+k}" y2="${y-k}" ${st}/>`; break;
     case 'mid': s+=`<polygon points="${x},${y-k*1.2} ${x+k*1.1},${y+k*0.8} ${x-k*1.1},${y+k*0.8}" ${st}/>`; break;
     case 'center': s+=`<circle cx="${x}" cy="${y}" r="${k}" ${st}/><line x1="${x-k*1.5}" y1="${y}" x2="${x+k*1.5}" y2="${y}" ${st}/><line x1="${x}" y1="${y-k*1.5}" x2="${x}" y2="${y+k*1.5}" ${st}/>`; break;
     case 'quad': s+=`<polygon points="${x},${y-k*1.2} ${x+k*1.2},${y} ${x},${y+k*1.2} ${x-k*1.2},${y}" ${st}/>`; break;
