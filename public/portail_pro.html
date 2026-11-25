@@ -4737,7 +4737,7 @@ async function _doSave(){
   } catch(e){ console.warn('Sauvegarde locale impossible:', e); }
   // Sauvegarde serveur (Raspberry Pi) en plus, si disponible
   try{
-    if(/[?&]embed=/.test(location.search)) return; // Relevés Chantier : pas de serveur Portail Pro
+    if(/[?&](embed|libre)=/.test(location.search)) return; // Relevés Chantier : pas de serveur Portail Pro
     const res = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4771,7 +4771,7 @@ async function loadState(){
   try{
     const ctrl = new AbortController();
     const timeout = setTimeout(()=>ctrl.abort(), 2500);
-    if(/[?&]embed=/.test(location.search)) throw 0; // Relevés Chantier : pas de serveur Portail Pro
+    if(/[?&](embed|libre)=/.test(location.search)) throw 0; // Relevés Chantier : pas de serveur Portail Pro
     const res = await fetch('/api/load', {signal: ctrl.signal});
     clearTimeout(timeout);
     if(res.ok){
@@ -7960,8 +7960,25 @@ function dwApplyTubes(){
     t.th=d.face==='h'?prof.h:prof.w;
   });
   // chaînes = tubes reliés bout à bout, QUEL QUE SOIT l'ordre ou le sens dans lequel les traits ont été tracés
+  // contour du relevé (pour savoir si un tube est sur le bord ou à l'intérieur)
+  let bx0=Infinity,by0=Infinity,bx1=-Infinity,by1=-Infinity;
+  rel.forEach(t=>{ bx0=Math.min(bx0,t.x1,t.x2); bx1=Math.max(bx1,t.x1,t.x2); by0=Math.min(by0,t.y1,t.y2); by1=Math.max(by1,t.y1,t.y2); });
   dwBuildChains(rel).forEach(chain=>{
     dwResolveChain(chain);
+    if(chain.length===1){
+      // tube seul (ex. traverse basse posée en T entre les montants) : s'il est sur le bord du dessin, sa face
+      // EXTÉRIEURE se pose sur le trait relevé (le tube est rentré vers l'intérieur) ; un tube intérieur reste centré
+      const t=chain[0], L=Math.hypot(t.x2-t.x1,t.y2-t.y1);
+      if(L>1e-6 && t.th>0){
+        const n={x:-(t.y2-t.y1)/L, y:(t.x2-t.x1)/L}, C={x:(bx0+bx1)/2, y:(by0+by1)/2};
+        const side=((t.x1+t.x2)/2-C.x)*n.x+((t.y1+t.y2)/2-C.y)*n.y, span=Math.max(bx1-bx0,by1-by0);
+        if(Math.abs(side)>span*0.25){
+          const k=-Math.sign(side)*t.th/2, R2=v=>Math.round(v*100)/100;
+          t.x1=R2(t.x1+n.x*k); t.y1=R2(t.y1+n.y*k); t.x2=R2(t.x2+n.x*k); t.y2=R2(t.y2+n.y*k); t.sig=dwTubeSig(t);
+        }
+      }
+      return;
+    }
     // cadre (fermé ou ouvert, ex. en U) : le contour EXTÉRIEUR des tubes se superpose au contour relevé, pour
     // que les traverses et montants posés à l'intérieur tombent pile sur les faces (raccords en T)
     if(chain.length>=2 && chain.every(t=>t.r)){
@@ -8067,6 +8084,9 @@ function dwDimsToOuterFaces(rel){
       // face la plus éloignée de l'autre extrémité = mesure hors tout
       return faces.map(proj).sort((a,b)=>Math.hypot(b.x-other.x,b.y-other.y)-Math.hypot(a.x-other.x,a.y-other.y))[0];
     });
+    // la valeur d'une cote du relevé ne change JAMAIS : si les faces ne tombent pas sur la même longueur, on garde le relevé
+    const L0=Math.hypot(dm.r.x2-dm.r.x1,dm.r.y2-dm.r.y1), L1=Math.hypot(out[1].x-out[0].x,out[1].y-out[0].y);
+    if(Math.abs(L1-L0)>0.5){ out[0]=P[0]; out[1]=P[1]; }
     dm.x1=R2(out[0].x); dm.y1=R2(out[0].y); dm.x2=R2(out[1].x); dm.y2=R2(out[1].y);
   });
 }

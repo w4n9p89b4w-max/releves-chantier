@@ -353,6 +353,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .hcard .foot{margin-top:auto;display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:13px}
 .hcard .ty{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:2px 7px}
 .brand{cursor:pointer}
+.freetools{display:flex;gap:8px;margin-top:8px}.freetools .btn{flex:1}
 /* code d'accès masqué sans champ « mot de passe » : les gestionnaires de mots de passe ne prennent plus la page pour une connexion */
 .masked{-webkit-text-security:disc;text-security:disc}
 @media (min-width:901px){ #app.home{grid-template-columns:minmax(0,1fr)} #app.home #side{display:none} }
@@ -479,6 +480,7 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
     </div>
     <div class="pane" id="listPane">
     <button class="btn primary" id="newBtn" type="button">+ Nouveau chantier</button>
+    <div class="freetools"><button class="btn sm" type="button" data-free="pp">Portail Pro</button><button class="btn sm" type="button" data-free="calep">Calepinage</button></div>
     <section class="recap" id="recap" hidden aria-labelledby="rcTitle"></section>
     <input class="search" id="q" type="search" placeholder="Rechercher un client, une ville…" style="margin-top:10px" autocomplete="off" name="recherche-chantier" data-lpignore="true" data-1p-ignore data-bwignore="true" data-form-type="other">
     <div class="rfilter" id="rfilter" hidden><span id="rfTxt"></span><button type="button" id="rfClr">Tout afficher ✕</button></div>
@@ -961,7 +963,7 @@ function renderHome(m){
   m.innerHTML = `<div class="homepg">
     <header class="hhead">
       <div class="hbrand">${$('.brand svg').outerHTML}<div><h2>Relevés Chantier</h2><div class="d">${today}</div></div></div>
-      <div class="actions">${viewer ? '<button class="btn" type="button" id="homeRefresh">Actualiser</button>' : '<button class="btn primary" type="button" id="homeNew">+ Nouveau chantier</button>'}</div></header>
+      <div class="actions"><button class="btn" type="button" data-free="pp">Portail Pro</button><button class="btn" type="button" data-free="calep">Calepinage</button>${viewer ? '<button class="btn" type="button" id="homeRefresh">Actualiser</button>' : '<button class="btn primary" type="button" id="homeNew">+ Nouveau chantier</button>'}</div></header>
     <input class="search" id="homeQ" type="search" placeholder="Rechercher un client, une ville…" autocomplete="off" name="recherche-chantier" data-lpignore="true" data-1p-ignore data-bwignore="true" data-form-type="other" value="${esc(S.q)}">
     <div class="htiles" id="homeTiles"></div>
     <div class="hsec" id="homeSec"></div>
@@ -2614,6 +2616,19 @@ document.addEventListener('keydown', e => { if(e.key==='Escape' && $('#calepLaye
    (kind 'croquis', base = image, rapport:'tole-perforee'), visible dans la bande des croquis, le rapport et le zip.
    Aperçu de n'importe quel export : « Enregistrer dans le dossier » envoie le PDF (pp-file) : rangé dans Photos & fichiers. */
 const PP = {c:null};
+/* Portail Pro / Calepinage sans client (accueil, liste) : outils seuls, rien n'est rangé dans un dossier.
+   Portail Pro en ?libre=1 (tous les onglets, pas de serveur Portail Pro, pas de bouton « Enregistrer dans le dossier »),
+   calepinage normal (son propre enregistrement sur l'appareil, Ouvrir / Enregistrer .json). */
+function openFreeTool(tool){
+  if($('#calepLayer')) return;
+  const L = document.createElement('div'); L.id = 'calepLayer'; L.dataset.tool = 'libre';
+  const name = tool==='pp' ? 'Portail Pro' : 'Calepinage toiture', src = tool==='pp' ? 'portail_pro.html?libre=1' : 'calepinage.html';
+  L.innerHTML = `<div class="bar"><b>${name}</b><span class="st">Sans client : rien n'est rangé dans un dossier</span>
+    <button class="btn sm primary" type="button" id="freeClose">Fermer</button></div><iframe src="${src}" title="${name}"></iframe>`;
+  document.body.appendChild(L); document.body.style.overflow = 'hidden';
+  $('#freeClose').onclick = () => { L.remove(); document.body.style.overflow = ''; };
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-free]'); if(b){ e.preventDefault(); e.stopPropagation(); openFreeTool(b.dataset.free); } }, true);
 function openTolePerf(c){
   if($('#calepLayer')) return;
   PP.c = c;
