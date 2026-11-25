@@ -5417,6 +5417,8 @@ window.addEventListener('message', e => {
   if(e.origin !== location.origin || !e.data) return;
   const btn = document.getElementById('rc-save-btn');
   if(e.data.type === 'pp-open'){ RC_CLIENT = e.data.client || ''; }
+  // ouvert sans client puis client créé depuis Relevés : les boutons « Enregistrer dans le dossier » apparaissent
+  if(e.data.type === 'pp-attach'){ RC_CLIENT = e.data.client || ''; document.body.classList.add('embed'); }
   if(e.data.type === 'pp-saved' && e.data.what === 'file'){ if(RC_WAIT){ const f = RC_WAIT; RC_WAIT = null; f(e.data); } return; }
   if(e.data.type === 'pp-saved' && btn){ btn.disabled = false; btn.innerHTML = '💾 Enregistrer dans le dossier'; if(!e.data.ok){ alert(e.data.msg || 'Non enregistré'); return; }
     // chaque enregistrement = un rapport à part : on propose de repartir d'une page vide pour la tôle suivante

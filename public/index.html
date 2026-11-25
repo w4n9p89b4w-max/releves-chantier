@@ -354,6 +354,16 @@ textarea.notes{min-height:200px;font-size:17px;line-height:1.55;resize:vertical}
 .hcard .ty{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border-radius:6px;padding:2px 7px}
 .brand{cursor:pointer}
 .freetools{display:flex;gap:8px;margin-top:8px}.freetools .btn{flex:1}
+#clientDlg{position:fixed;inset:0;z-index:70;background:rgba(10,15,18,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+#clientDlg .add-box{background:var(--surface);border-radius:16px;width:min(560px,100%);max-height:100%;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:12px}
+#clientDlg h3{font-size:24px}
+#clientDlg .cf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+#clientDlg label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
+#clientDlg input:not([type=checkbox]){font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+#clientDlg .cf-types{display:flex;gap:14px;flex-wrap:wrap}
+#clientDlg .cf-chk{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:15px;font-weight:500}
+#clientDlg .cf-msg{color:var(--danger);font-size:14px;min-height:1em}
+#clientDlg .foot{display:flex;justify-content:flex-end;gap:8px}
 /* code d'accès masqué sans champ « mot de passe » : les gestionnaires de mots de passe ne prennent plus la page pour une connexion */
 .masked{-webkit-text-security:disc;text-security:disc}
 @media (min-width:901px){ #app.home{grid-template-columns:minmax(0,1fr)} #app.home #side{display:none} }
@@ -643,7 +653,13 @@ const Sync = {
       const have = new Map((await DB.all('media')).map(m=>[m.id, m.rev ?? null]));
       const out = new Set((await DB.all('outbox')).map(o=>o.id));
       const known = new Set(S.list.filter(c=>!c.exemple).map(c=>c.id));
-      let n = 0, ns = 0, nd = 0;
+      let n = 0, ns = 0, nd = 0, nc = 0;
+      // clients créés depuis le PC / l'iPhone (Portail Pro ou calepinage sans client) : l'iPad les ajoute à ses dossiers
+      try{ for(const c of await this.api('GET', '/chantiers')){
+        if(!c?.creeBureau || known.has(c.id) || (await DB.get('chantiers', c.id))) continue;
+        normalize(c); await DB.rawPut('chantiers', c); S.list.push(c); known.add(c.id); nc++;
+      } }catch{}
+      if(nc){ renderList(); toast(nc>1 ? `${nc} nouveaux clients créés au bureau` : '1 nouveau client créé au bureau'); }
       // ajouts du bureau supprimés depuis le bureau : on les retire aussi ici
       const onSrv = new Set(ids.map(r=>r.id));
       for(const m of await DB.all('media')){
@@ -2624,9 +2640,72 @@ function openFreeTool(tool){
   const L = document.createElement('div'); L.id = 'calepLayer'; L.dataset.tool = 'libre';
   const name = tool==='pp' ? 'Portail Pro' : 'Calepinage toiture', src = tool==='pp' ? 'portail_pro.html?libre=1' : 'calepinage.html';
   L.innerHTML = `<div class="bar"><b>${name}</b><span class="st">Sans client : rien n'est rangé dans un dossier</span>
+    <button class="btn sm" type="button" id="freeClient">+ Créer un client avec ce calcul</button>
     <button class="btn sm primary" type="button" id="freeClose">Fermer</button></div><iframe src="${src}" title="${name}"></iframe>`;
   document.body.appendChild(L); document.body.style.overflow = 'hidden';
-  $('#freeClose').onclick = () => { L.remove(); document.body.style.overflow = ''; };
+  $('#freeClose').onclick = () => { L.remove(); document.body.style.overflow = ''; PP.c = null; };
+  $('#freeClient').onclick = () => clientForm(tool);
+}
+/* « Créer un client avec ce calcul » : petite fiche, le client est créé (sur le serveur depuis le PC / l'iPhone,
+   l'iPad le récupère à la synchro : creeBureau), puis le calcul ouvert est rattaché à son dossier. */
+function clientForm(tool){
+  const D = document.createElement('div'); D.id = 'clientDlg';
+  let ty = tool==='pp' ? ['portail'] : ['toiture'];
+  try{ if(tool==='pp' && /tôle/i.test($('#calepLayer iframe').contentDocument.querySelector('.nav .nav-btn.active')?.textContent||'')) ty = ['perforee']; }catch{}
+  D.innerHTML = `<form class="add-box" autocomplete="off">
+    <h3>Nouveau client</h3>
+    <p class="note">${tool==='pp' ? 'Le calcul Portail Pro reste ouvert : ensuite, « Enregistrer dans le dossier » le range chez ce client.' : 'Le calepinage en cours est rangé dans le dossier de ce client.'}</p>
+    <div class="cf-grid">
+      <label>Nom<input name="nom" required data-lpignore="true" data-1p-ignore></label>
+      <label>Prénom<input name="prenom" data-lpignore="true" data-1p-ignore></label>
+      <label>Entreprise<input name="entreprise" data-lpignore="true" data-1p-ignore></label>
+      <label>Téléphone<input name="tel" type="tel" inputmode="tel" data-lpignore="true" data-1p-ignore></label>
+      <label>Ville<input name="ville" data-lpignore="true" data-1p-ignore></label>
+      <label>Code postal<input name="cp" inputmode="numeric" data-lpignore="true" data-1p-ignore></label>
+    </div>
+    <div class="cf-types">${Object.entries(TYPE_LBL).map(([k,l]) => `<label class="cf-chk"><input type="checkbox" name="types" value="${k}" ${ty.includes(k)?'checked':''}> ${l}</label>`).join('')}</div>
+    <p class="cf-msg" role="status"></p>
+    <div class="foot"><button class="btn" type="button" data-x>Annuler</button><button class="btn primary" type="submit">Créer le client</button></div>
+  </form>`;
+  document.body.appendChild(D);
+  const f = D.querySelector('form'); setTimeout(() => f.nom.focus(), 30);
+  D.querySelector('[data-x]').onclick = () => D.remove();
+  D.addEventListener('mousedown', e => { if(e.target===D) D.remove(); });
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = f.querySelector('[type=submit]'); btn.disabled = true; f.querySelector('.cf-msg').textContent = 'Création…';
+    const c = normalize({...newChantier(), nom: f.nom.value.trim(), prenom: f.prenom.value.trim(), entreprise: f.entreprise.value.trim(),
+      tel: f.tel.value.trim(), ville: f.ville.value.trim(), cp: f.cp.value.trim(), types: [...f.querySelectorAll('[name=types]:checked')].map(x=>x.value)});
+    try{
+      if(SYNC.role==='viewer'){ c.creeBureau = true; await Sync.api('PUT', '/chantiers/'+encodeURIComponent(c.id), c); }
+      else await DB.put('chantiers', c);
+      S.list.push(c); renderList();
+      D.remove();
+      await attachTool(tool, c);
+    }catch(err){ btn.disabled = false; f.querySelector('.cf-msg').textContent = navigator.onLine ? 'Client non créé : '+err.message : 'Client non créé : pas de connexion'; }
+  };
+}
+async function attachTool(tool, c){
+  const L = $('#calepLayer'); if(!L) return;
+  const fr = L.querySelector('iframe');
+  if(tool==='pp'){
+    PP.c = c; L.dataset.tool = 'pp';
+    L.querySelector('.bar b').textContent = 'Portail Pro · ' + (fullName(c)||'Sans nom');
+    L.querySelector('.st').textContent = 'Client créé : « Enregistrer dans le dossier » range le calcul chez lui';
+    $('#freeClient').remove();
+    fr.contentWindow.postMessage({type:'pp-attach', client: fullName(c)||''}, location.origin);
+    toast('Client créé : ' + fullName(c));
+    return;
+  }
+  // calepinage : on reprend le projet en cours, avec la fiche du nouveau client, et on le range dans son dossier
+  let proj = null;
+  try{ proj = JSON.parse(JSON.stringify(fr.contentWindow.projectOut())); }catch{}
+  if(!proj?.projet) proj = calepinageNew(c);
+  else { const info = calepinageNew(c).projet.info; proj.projet.info = {...(proj.projet.info||{})}; for(const k in info) if(info[k]) proj.projet.info[k] = info[k]; }
+  await new Promise(res => { CAL.resolve = res; CAL.next = {c, data: proj}; calepSend(); });
+  L.remove(); document.body.style.overflow = '';
+  toast('Client créé : ' + fullName(c) + ' · calepinage rangé dans son dossier');
+  openCalepinage(c);
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-free]'); if(b){ e.preventDefault(); e.stopPropagation(); openFreeTool(b.dataset.free); } }, true);
 function openTolePerf(c){
